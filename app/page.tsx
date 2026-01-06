@@ -14,16 +14,16 @@ type Settings = {
   maxStrikes: number; // 10
   maxQuestions: number; // 10
   wrongLetterStrike: number; // default 1
-  wrongFullGuessStrike: number; // default 2
+  wrongFullGuessStrike: number; // default 1 (changed)
   hintCostCategory: number; // default 3
 };
 
 const DEFAULT_SETTINGS: Settings = {
   maxStrikes: 10,
   maxQuestions: 10,
-  wrongLetterStrike: 1, // (5) default wrong guess strike 1
-  wrongFullGuessStrike: 2,
-  hintCostCategory: 3, // (4) default hint strikes 3
+  wrongLetterStrike: 1,
+  wrongFullGuessStrike: 1, // ✅ default full answer penalty = 1
+  hintCostCategory: 3,
 };
 
 function normalizeAnswer(s: string) {
@@ -40,31 +40,6 @@ function uniqLettersInAnswer(norm: string) {
   return set;
 }
 
-/**
- * (3) Larger blanks, and clear spacing between words.
- * - Letters: shown as "_" until revealed
- * - Spaces: shown as a wider gap
- * - Punctuation: shown as-is
- */
-function maskedAnswer(norm: string, revealed: Set<string>) {
-  const parts: string[] = [];
-
-  for (const ch of norm) {
-    if (isLetter(ch)) {
-      parts.push(revealed.has(ch) ? ch : "_");
-    } else if (ch === " ") {
-      // word break indicator (extra spacing)
-      parts.push(""); // creates a gap in the join
-    } else {
-      parts.push(ch);
-    }
-  }
-
-  // Join with space between letter blanks to make them larger/readable.
-  // Word breaks become extra gaps because we inserted "" for spaces.
-  return parts.join(" ").replace(/\s{3,}/g, "   ").trimEnd();
-}
-
 function allRevealed(norm: string, revealed: Set<string>) {
   for (const ch of norm) {
     if (isLetter(ch) && !revealed.has(ch)) return false;
@@ -72,14 +47,138 @@ function allRevealed(norm: string, revealed: Set<string>) {
   return true;
 }
 
-function clampInt(n: number, min: number, max: number) {
-  if (Number.isNaN(n)) return min;
-  return Math.max(min, Math.min(max, n));
-}
-
 // Xs only (no dots): shows the number of strikes as X characters.
 function strikeMarks(strikes: number) {
   return "X".repeat(Math.max(0, strikes)).split("").join(" ");
+}
+
+/**
+ * Answer renderer:
+ * - Less space between letters
+ * - More space between words
+ * - Bigger blanks
+ */
+function AnswerDisplay(props: { normalized: string; revealed: Set<string> }) {
+  const { normalized, revealed } = props;
+
+  // Tuning knobs:
+  const letterGapClass = "mx-1"; // less space between letters
+  const wordGapClass = "w-10"; // more space between words
+  const letterBoxClass =
+    "inline-flex items-center justify-center font-mono text-4xl sm:text-5xl font-extrabold tracking-tight";
+  const letterWidthClass = "w-8 sm:w-10";
+  const punctClass = "font-mono text-4xl sm:text-5xl font-extrabold tracking-tight mx-1";
+
+  const items: React.ReactNode[] = [];
+  for (let i = 0; i < normalized.length; i++) {
+    const ch = normalized[i];
+
+    if (ch === " ") {
+      // Big visible gap between words
+      items.push(<span key={`w-${i}`} className={`inline-block ${wordGapClass}`} />);
+      continue;
+    }
+
+    if (isLetter(ch)) {
+      const shown = revealed.has(ch) ? ch : "_";
+      items.push(
+        <span
+          key={`l-${i}`}
+          className={`${letterBoxClass} ${letterWidthClass} ${letterGapClass}`}
+          aria-label={shown === "_" ? "blank" : shown}
+        >
+          {shown}
+        </span>
+      );
+      continue;
+    }
+
+    // punctuation stays visible
+    items.push(
+      <span key={`p-${i}`} className={punctClass}>
+        {ch}
+      </span>
+    );
+  }
+
+  return (
+    <div className="mt-3 break-words leading-relaxed">
+      <div className="flex flex-wrap items-center">{items}</div>
+    </div>
+  );
+}
+
+/**
+ * Simple sound effects using Web Audio API (no files needed).
+ * Note: audio must be triggered by a user gesture at least once on mobile.
+ */
+function useSfx(enabled: boolean) {
+  const ctxRef = useRef<AudioContext | null>(null);
+
+  function getCtx() {
+    if (!ctxRef.current) {
+      // @ts-expect-error - Safari prefix fallback not needed in most cases but harmless to ignore
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      ctxRef.current = new Ctx();
+    }
+    return ctxRef.current;
+  }
+
+  function beep(freq: number, ms: number, volume = 0.05, type: OscillatorType = "sine") {
+    if (!enabled) return;
+    const ctx = getCtx();
+
+    // Ensure resumed after first gesture
+    if (ctx.state === "suspended") {
+      void ctx.resume();
+    }
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = type;
+    osc.frequency.value = freq;
+
+    // Gentle envelope to avoid clicks
+    const now = ctx.currentTime;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(volume, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + ms / 1000);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + ms / 1000);
+  }
+
+  // Small “motifs”
+  const sfx = {
+    yes: () => beep(660, 90, 0.05, "triangle"),
+    no: () => beep(220, 140, 0.06, "sawtooth"),
+    correct: () => {
+      beep(784, 80, 0.05, "triangle");
+      setTimeout(() => beep(988, 90, 0.05, "triangle"), 90);
+    },
+    wrong: () => beep(196, 160, 0.07, "sawtooth"),
+    hint: () => {
+      beep(523, 80, 0.05, "sine");
+      setTimeout(() => beep(659, 90, 0.05, "sine"), 90);
+    },
+    win: () => {
+      beep(659, 90, 0.05, "triangle");
+      setTimeout(() => beep(784, 90, 0.05, "triangle"), 90);
+      setTimeout(() => beep(988, 120, 0.06, "triangle"), 180);
+    },
+    lose: () => {
+      beep(220, 140, 0.06, "sawtooth");
+      setTimeout(() => beep(196, 170, 0.07, "sawtooth"), 130);
+      setTimeout(() => beep(174, 200, 0.08, "sawtooth"), 270);
+    },
+    click: () => beep(440, 35, 0.03, "sine"),
+  };
+
+  return sfx;
 }
 
 export default function Page() {
@@ -92,13 +191,17 @@ export default function Page() {
   // Settings
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
 
+  // Sound toggle
+  const [soundsOn, setSoundsOn] = useState(true);
+  const sfx = useSfx(soundsOn);
+
   // Game state
   const [strikes, setStrikes] = useState(0);
   const [questionsAsked, setQuestionsAsked] = useState(0);
   const [qaLog, setQaLog] = useState<QAItem[]>([]);
   const [revealedLetters, setRevealedLetters] = useState<Set<string>>(new Set());
   const [wrongLetters, setWrongLetters] = useState<Set<string>>(new Set());
-  const [message, setMessage] = useState<string>("");
+  const [message, setMessage] = useState<string>(""); // can be empty; UI still shows box
 
   // Inputs
   const [questionText, setQuestionText] = useState("");
@@ -115,11 +218,6 @@ export default function Page() {
   const normalized = useMemo(() => normalizeAnswer(secretAnswer), [secretAnswer]);
   const uniqueLetters = useMemo(() => uniqLettersInAnswer(normalized), [normalized]);
 
-  const pattern = useMemo(
-    () => maskedAnswer(normalized, revealedLetters),
-    [normalized, revealedLetters]
-  );
-
   const hasWon = useMemo(() => {
     if (!normalized.trim()) return false;
     return allRevealed(normalized, revealedLetters);
@@ -132,9 +230,11 @@ export default function Page() {
     if (hasWon) {
       setPhase("end");
       setMessage("You solved it!");
+      sfx.win();
     } else if (hasLost) {
       setPhase("end");
       setMessage("You hit 10 strikes.");
+      sfx.lose();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasWon, hasLost]);
@@ -158,6 +258,7 @@ export default function Page() {
   }
 
   function startGame() {
+    sfx.click();
     const trimmed = secretAnswer.trim();
     if (!trimmed) {
       setMessage("Enter a secret answer first.");
@@ -174,14 +275,13 @@ export default function Page() {
     setQaLog([]);
     setRevealedLetters(new Set());
     setWrongLetters(new Set());
-    setMessage("");
+    setMessage("Game started — ask a question or guess a letter!");
     setQuestionText("");
     setLetterGuess("");
     setFullGuess("");
 
     setPhase("play");
 
-    // focus first input for convenience
     setTimeout(() => {
       letterInputRef.current?.focus();
     }, 0);
@@ -193,6 +293,7 @@ export default function Page() {
   }
 
   function addQA(answer: YesNo) {
+    sfx.click();
     if (questionsAsked >= settings.maxQuestions) {
       setMessage("You’ve used all 10 questions. Switch to guessing letters or the full answer.");
       return;
@@ -207,8 +308,14 @@ export default function Page() {
     setQuestionsAsked((n) => n + 1);
     setQuestionText("");
 
-    if (answer === "NO") applyStrikes(1);
-    setMessage(answer === "YES" ? "Marked as YES (no strike)." : "Marked as NO (+1 strike).");
+    if (answer === "NO") {
+      applyStrikes(1);
+      sfx.no();
+      setMessage("Marked as NO (+1 strike).");
+    } else {
+      sfx.yes();
+      setMessage("Marked as YES (no strike).");
+    }
   }
 
   function guessLetter() {
@@ -231,6 +338,7 @@ export default function Page() {
         next.add(ch);
         return next;
       });
+      sfx.correct();
       setMessage(`Nice — “${ch}” is in the answer.`);
     } else {
       setWrongLetters((prev) => {
@@ -239,6 +347,7 @@ export default function Page() {
         return next;
       });
       applyStrikes(settings.wrongLetterStrike);
+      sfx.wrong();
       setMessage(`Nope — “${ch}” is not in the answer. (+${settings.wrongLetterStrike} strike)`);
     }
 
@@ -255,10 +364,12 @@ export default function Page() {
     const normGuess = normalizeAnswer(g);
     if (normGuess === normalized.trim()) {
       setRevealedLetters(new Set(uniqueLetters));
+      sfx.win();
       setMessage("Correct!");
     } else {
       applyStrikes(settings.wrongFullGuessStrike);
-      setMessage(`Wrong full guess. (+${settings.wrongFullGuessStrike} strikes)`);
+      sfx.wrong();
+      setMessage(`Wrong full guess. (+${settings.wrongFullGuessStrike} strike)`);
     }
     setFullGuess("");
     setTimeout(() => fullInputRef.current?.focus(), 0);
@@ -273,6 +384,7 @@ export default function Page() {
     }
 
     applyStrikes(cost);
+    sfx.hint();
     setMessage(`Hint: category is “${category.trim()}”. (+${cost} strikes)`);
   }
 
@@ -287,26 +399,36 @@ export default function Page() {
   return (
     <main className="min-h-screen bg-[#0C2340] text-white">
       <div className="mx-auto max-w-5xl px-4 py-8">
-        {/* (1) Bigger, centered header above gameplay */}
-        <header className="mb-8 text-center">
+        {/* Big centered header */}
+        <header className="mb-6 text-center">
           <h1 className="text-5xl font-extrabold tracking-tight text-[#E87722]">Hang 10</h1>
           <p className="mt-2 text-lg text-white/85">
             Ask up to 10 yes/no questions. Each <span className="font-semibold">NO</span> is a strike. 10 strikes and
             you’re out.
           </p>
-          <div className="mt-4 flex justify-center">
+
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
             <button className={secondaryBtn} onClick={resetGameToHome}>
               Reset
+            </button>
+
+            <button
+              className={secondaryBtn}
+              onClick={() => setSoundsOn((v) => !v)}
+              aria-pressed={soundsOn}
+              title="Toggle sound effects"
+            >
+              Sounds: {soundsOn ? "On" : "Off"}
             </button>
           </div>
         </header>
 
-        {/* (2) Larger, more prominent feedback area */}
-        {message && (
-          <div className="mb-6 rounded-3xl border border-white/25 bg-[#E87722]/20 px-6 py-5 text-lg font-semibold text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
-            {message}
-          </div>
-        )}
+        {/* Feedback area ALWAYS present so the page never resizes */}
+        <div className="mb-6 rounded-3xl border border-white/25 bg-[#E87722]/20 px-6 py-5 text-lg font-semibold text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)] min-h-[88px] flex items-center">
+          <span className={message ? "" : "text-white/70"}>
+            {message || "Make a guess or ask a question to get feedback here."}
+          </span>
+        </div>
 
         {phase === "home" && (
           <section className="rounded-3xl border border-white/15 bg-white/5 p-6">
@@ -320,6 +442,7 @@ export default function Page() {
               <button
                 className={primaryBtn}
                 onClick={() => {
+                  sfx.click();
                   setMessage("");
                   setPhase("setup");
                 }}
@@ -330,6 +453,7 @@ export default function Page() {
               <button
                 className={secondaryBtn}
                 onClick={() => {
+                  sfx.click();
                   setSettings(DEFAULT_SETTINGS);
                   setMessage("Settings restored to defaults.");
                 }}
@@ -427,7 +551,13 @@ export default function Page() {
                 <button className={primaryBtn} onClick={startGame}>
                   Start Game
                 </button>
-                <button className={secondaryBtn} onClick={() => setPhase("home")}>
+                <button
+                  className={secondaryBtn}
+                  onClick={() => {
+                    sfx.click();
+                    setPhase("home");
+                  }}
+                >
                   Back
                 </button>
               </div>
@@ -437,7 +567,7 @@ export default function Page() {
 
         {phase === "play" && (
           <section className="grid gap-6 lg:grid-cols-3">
-            {/* Left: status + answer */}
+            {/* Left */}
             <div className="rounded-3xl border border-white/15 bg-white/5 p-6 lg:col-span-2">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-base text-white/95">
@@ -455,12 +585,7 @@ export default function Page() {
 
               <div className="mt-6 rounded-3xl border border-white/15 bg-black/20 p-6">
                 <div className="text-xs uppercase tracking-wider text-white/70">Answer</div>
-
-                {/* (3) Bigger blanks and clear word spacing */}
-                <div className="mt-3 break-words font-mono text-4xl leading-relaxed tracking-widest">
-                  {pattern}
-                </div>
-
+                <AnswerDisplay normalized={normalized} revealed={revealedLetters} />
                 <div className="mt-4 text-base text-white/75">
                   Letters revealed:{" "}
                   <span className="text-white font-semibold">{revealedLetters.size}</span> /{" "}
@@ -506,7 +631,6 @@ export default function Page() {
                     Wrong letter: +{settings.wrongLetterStrike} strike.
                   </p>
 
-                  {/* (6) Enter key submits */}
                   <form
                     className="mt-3 flex gap-3"
                     onSubmit={(e) => {
@@ -538,10 +662,9 @@ export default function Page() {
                 <div className="rounded-3xl border border-white/15 bg-white/5 p-5 md:col-span-2">
                   <h3 className="text-lg font-bold">Guess the full answer</h3>
                   <p className="mt-1 text-sm text-white/85">
-                    Wrong full guess: +{settings.wrongFullGuessStrike} strikes.
+                    Wrong full guess: +{settings.wrongFullGuessStrike} strike.
                   </p>
 
-                  {/* (6) Enter key submits */}
                   <form
                     className="mt-3 flex flex-col gap-3 sm:flex-row"
                     onSubmit={(e) => {
@@ -564,7 +687,7 @@ export default function Page() {
               </div>
             </div>
 
-            {/* Right: hint + log */}
+            {/* Right */}
             <aside className="rounded-3xl border border-white/15 bg-white/5 p-6">
               <h3 className="text-xl font-bold">Hint (costs strikes)</h3>
               <div className="mt-3 grid gap-3">
@@ -651,13 +774,13 @@ export default function Page() {
               <button
                 className={primaryBtn}
                 onClick={() => {
-                  // keep same answer/category; restart play
+                  sfx.click();
                   setStrikes(0);
                   setQuestionsAsked(0);
                   setQaLog([]);
                   setRevealedLetters(new Set());
                   setWrongLetters(new Set());
-                  setMessage("");
+                  setMessage("New round — go!");
                   setQuestionText("");
                   setLetterGuess("");
                   setFullGuess("");
@@ -671,6 +794,7 @@ export default function Page() {
               <button
                 className={secondaryBtn}
                 onClick={() => {
+                  sfx.click();
                   setMessage("");
                   setPhase("setup");
                 }}
