@@ -47,6 +47,11 @@ function allRevealed(norm: string, revealed: Set<string>) {
   return true;
 }
 
+function clampInt(n: number, min: number, max: number) {
+  if (Number.isNaN(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
 // Xs only (no dots): shows the number of strikes as X characters.
 function strikeMarks(strikes: number) {
   return "X".repeat(Math.max(0, strikes)).split("").join(" ");
