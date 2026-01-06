@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type Phase = "home" | "setup" | "play" | "end";
 type YesNo = "YES" | "NO";
-
 type QAItem = { q: string; a: YesNo };
 
 type Settings = {
@@ -26,58 +25,33 @@ const DEFAULT_SETTINGS: Settings = {
 function normalizeAnswer(s: string) {
   return s.normalize("NFKD").toUpperCase();
 }
-
 function isLetter(ch: string) {
   return /^[A-Z]$/.test(ch);
 }
-
 function uniqLettersInAnswer(norm: string) {
   const set = new Set<string>();
   for (const ch of norm) if (isLetter(ch)) set.add(ch);
   return set;
 }
-
 function allRevealed(norm: string, revealed: Set<string>) {
-  for (const ch of norm) {
-    if (isLetter(ch) && !revealed.has(ch)) return false;
-  }
+  for (const ch of norm) if (isLetter(ch) && !revealed.has(ch)) return false;
   return true;
 }
-
 function clampInt(n: number, min: number, max: number) {
   if (Number.isNaN(n)) return min;
   return Math.max(min, Math.min(max, n));
 }
-
 function strikeMarks(strikes: number) {
   return "X".repeat(Math.max(0, strikes)).split("").join(" ");
 }
 
-/**
- * Answer display:
- * - less space between letters
- * - more space between words
- * - Auburn orange for underscores + revealed letters
- * - not bold
- */
-function AnswerDisplay({
-  normalized,
-  revealed,
-}: {
-  normalized: string;
-  revealed: Set<string>;
-}) {
+function AnswerDisplay({ normalized, revealed }: { normalized: string; revealed: Set<string> }) {
   const items: React.ReactNode[] = [];
-
   for (let i = 0; i < normalized.length; i++) {
     const ch = normalized[i];
-
     if (ch === " ") {
       items.push(<span key={`w-${i}`} className="inline-block w-10" />);
-      continue;
-    }
-
-    if (isLetter(ch)) {
+    } else if (isLetter(ch)) {
       const shown = revealed.has(ch) ? ch : "_";
       items.push(
         <span
@@ -88,25 +62,20 @@ function AnswerDisplay({
           {shown}
         </span>
       );
-      continue;
+    } else {
+      items.push(
+        <span
+          key={`p-${i}`}
+          className="font-mono text-4xl sm:text-6xl font-normal tracking-tight text-white/90 mx-1"
+        >
+          {ch}
+        </span>
+      );
     }
-
-    items.push(
-      <span
-        key={`p-${i}`}
-        className="font-mono text-4xl sm:text-6xl font-normal tracking-tight text-white/90 mx-1"
-      >
-        {ch}
-      </span>
-    );
   }
-
   return <div className="flex flex-wrap justify-center items-center">{items}</div>;
 }
 
-/**
- * Sound effects with Web Audio API (no files).
- */
 function useSfx(enabled: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
 
@@ -121,7 +90,6 @@ function useSfx(enabled: boolean) {
 
   function beep(freq: number, ms: number, volume = 0.05, type: OscillatorType = "sine") {
     if (!enabled) return;
-
     const ctx = getCtx();
     if (ctx.state === "suspended") void ctx.resume();
 
@@ -172,34 +140,27 @@ function useSfx(enabled: boolean) {
 export default function Page() {
   const [phase, setPhase] = useState<Phase>("home");
 
-  // Setup
   const [secretAnswer, setSecretAnswer] = useState("");
   const [category, setCategory] = useState("");
 
-  // Settings
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
 
-  // Sound
   const [soundsOn, setSoundsOn] = useState(true);
   const sfx = useSfx(soundsOn);
 
-  // Game state
   const [strikes, setStrikes] = useState(0);
   const [questionsAsked, setQuestionsAsked] = useState(0);
   const [qaLog, setQaLog] = useState<QAItem[]>([]);
   const [revealedLetters, setRevealedLetters] = useState<Set<string>>(new Set());
   const [wrongLetters, setWrongLetters] = useState<Set<string>>(new Set());
-  const [message, setMessage] = useState<string>("");
+  const [message, setMessage] = useState("");
 
-  // Inputs
   const [questionText, setQuestionText] = useState("");
   const [letterGuess, setLetterGuess] = useState("");
   const [fullGuess, setFullGuess] = useState("");
 
-  // Host-only
   const [showAnswerToHost, setShowAnswerToHost] = useState(false);
 
-  // Refs for Enter-to-submit focus
   const letterInputRef = useRef<HTMLInputElement | null>(null);
   const fullInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -377,21 +338,26 @@ export default function Page() {
 
   function buyHintShowCategory() {
     const cost = settings.hintCostCategory;
-
     if (!category.trim()) {
       setMessage("No category was set for this game.");
       return;
     }
-
     applyStrikes(cost);
     sfx.hint();
     setMessage(`Hint: category is “${category.trim()}”. (+${cost} strikes)`);
   }
 
   const primaryBtn =
-    "rounded-2xl bg-[#E87722] px-5 py-3 font-semibold text-white hover:opacity-90";
+    "rounded-2xl bg-[#E87722] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90";
   const secondaryBtn =
-    "rounded-2xl border border-white/20 px-5 py-3 font-semibold hover:bg-white/10";
+    "rounded-2xl border border-white/20 px-4 py-2.5 text-sm font-semibold hover:bg-white/10";
+
+  // Smaller cards for guess letter + question
+  const smallCard =
+    "rounded-3xl border border-white/15 bg-white/5 p-4";
+  // Standard cards for hint + full answer (same size)
+  const standardCard =
+    "rounded-3xl border border-white/15 bg-white/5 p-5";
 
   return (
     <main className="min-h-screen bg-[#0C2340] text-white">
@@ -419,14 +385,7 @@ export default function Page() {
           </div>
         </header>
 
-        {/* Feedback (smaller) */}
-        <div className="mb-4 rounded-3xl border border-white/20 bg-[#E87722]/15 px-5 py-4 min-h-[64px] flex items-center text-base font-semibold shadow-[0_0_0_1px_rgba(255,255,255,0.06)]">
-          <span className={message ? "" : "text-white/70"}>
-            {message || "Make a move to see feedback here."}
-          </span>
-        </div>
-
-        {/* Strikes (stand out more) */}
+        {/* Strikes (top, prominent) */}
         <div className="mb-6 rounded-3xl border border-[#E87722]/35 bg-black/30 px-6 py-5 min-h-[88px] flex flex-col justify-center shadow-[0_0_0_1px_rgba(232,119,34,0.22),0_12px_30px_rgba(0,0,0,0.35)]">
           <div className="text-sm uppercase tracking-wider text-white/70">Strikes</div>
           <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -574,7 +533,7 @@ export default function Page() {
 
         {phase === "play" && (
           <>
-            {/* Answer (bigger) */}
+            {/* Answer full width */}
             <section className="mb-6 rounded-3xl border border-white/15 bg-black/25 p-8 min-h-[190px] flex flex-col justify-center">
               <div className="text-xs uppercase tracking-wider text-white/70 text-center">Answer</div>
               <div className="mt-3">
@@ -587,20 +546,72 @@ export default function Page() {
               </div>
             </section>
 
-            {/* Grid: actions + hint + log aligned */}
+            {/* 2x2 grid of action boxes */}
             <section className="grid gap-6 md:grid-cols-2">
-              <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
-                <h3 className="text-lg font-bold">Ask a yes/no question</h3>
-                <p className="mt-1 text-sm text-white/85">
-                  Each <span className="font-semibold">NO</span> is +1 strike. Max {settings.maxQuestions} questions.
+              {/* TOP LEFT: Guess a letter (smaller) */}
+              <div className={smallCard}>
+                <h3 className="text-base font-bold">Guess a letter</h3>
+                <p className="mt-1 text-xs text-white/85">
+                  Wrong letter: +{settings.wrongLetterStrike} strike.
                 </p>
+
+                <form
+                  className="mt-3 flex gap-3"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    guessLetter();
+                  }}
+                >
+                  <input
+                    ref={letterInputRef}
+                    className="w-24 rounded-2xl border border-white/20 bg-black/20 px-3 py-2.5 text-center text-xl font-bold outline-none focus:border-white/40"
+                    value={letterGuess}
+                    onChange={(e) => setLetterGuess(e.target.value)}
+                    placeholder="A"
+                    maxLength={2}
+                  />
+                  <button type="submit" className={primaryBtn + " flex-1"}>
+                    Guess
+                  </button>
+                </form>
+
+                <div className="mt-3 text-xs text-white/85">
+                  <span className="text-white/70">Wrong:</span>{" "}
+                  <span className="font-mono">{[...wrongLetters].sort().join(" ") || "—"}</span>
+                </div>
+              </div>
+
+              {/* TOP RIGHT: Hint (standard, same size as full answer) */}
+              <div className={standardCard}>
+                <h3 className="text-base font-bold">Hint (costs strikes)</h3>
+                <button
+                  className="mt-3 w-full rounded-2xl border border-white/20 px-5 py-4 text-left hover:bg-white/10"
+                  onClick={buyHintShowCategory}
+                >
+                  <div className="text-lg font-semibold">Show category</div>
+                  <div className="text-sm text-white/70">Cost: +{settings.hintCostCategory} strikes</div>
+                </button>
+
+                <div className="mt-3 text-xs text-white/70">
+                  Tip: On phones, sounds may require one tap first.
+                </div>
+              </div>
+
+              {/* BOTTOM LEFT: Yes/No question (smaller) */}
+              <div className={smallCard}>
+                <h3 className="text-base font-bold">Ask a yes/no question</h3>
+                <p className="mt-1 text-xs text-white/85">
+                  Each <span className="font-semibold">NO</span> is +1 strike. {questionsLeft} question(s) left.
+                </p>
+
                 <input
-                  className="mt-3 w-full rounded-2xl border border-white/20 bg-black/20 px-4 py-3 text-lg outline-none focus:border-white/40"
+                  className="mt-3 w-full rounded-2xl border border-white/20 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-white/40"
                   value={questionText}
                   onChange={(e) => setQuestionText(e.target.value)}
                   placeholder="e.g., Is it a movie?"
                   disabled={questionsAsked >= settings.maxQuestions}
                 />
+
                 <div className="mt-3 flex gap-3">
                   <button
                     className={secondaryBtn + " flex-1 disabled:opacity-40"}
@@ -617,47 +628,15 @@ export default function Page() {
                     NO (+1)
                   </button>
                 </div>
-                <div className="mt-3 text-sm text-white/80">
-                  <span className="font-semibold text-white">Questions:</span> {questionsAsked}/{settings.maxQuestions}{" "}
-                  <span className="text-white/70">({questionsLeft} left)</span>
-                </div>
               </div>
 
-              <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
-                <h3 className="text-lg font-bold">Guess a letter</h3>
-                <p className="mt-1 text-sm text-white/85">
-                  Wrong letter: +{settings.wrongLetterStrike} strike.
-                </p>
-                <form
-                  className="mt-3 flex gap-3"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    guessLetter();
-                  }}
-                >
-                  <input
-                    ref={letterInputRef}
-                    className="w-28 rounded-2xl border border-white/20 bg-black/20 px-4 py-3 text-center text-2xl font-bold outline-none focus:border-white/40"
-                    value={letterGuess}
-                    onChange={(e) => setLetterGuess(e.target.value)}
-                    placeholder="A"
-                    maxLength={2}
-                  />
-                  <button type="submit" className={primaryBtn + " flex-1"}>
-                    Guess
-                  </button>
-                </form>
-                <div className="mt-3 text-sm text-white/85">
-                  <span className="text-white/70">Wrong letters:</span>{" "}
-                  <span className="font-mono">{[...wrongLetters].sort().join(" ") || "—"}</span>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/15 bg-white/5 p-5 md:col-span-2">
-                <h3 className="text-lg font-bold">Guess the full answer</h3>
-                <p className="mt-1 text-sm text-white/85">
+              {/* BOTTOM RIGHT: Guess full answer (standard, same size as hint) */}
+              <div className={standardCard}>
+                <h3 className="text-base font-bold">Guess the full answer</h3>
+                <p className="mt-1 text-xs text-white/85">
                   Wrong full guess: +{settings.wrongFullGuessStrike} strike.
                 </p>
+
                 <form
                   className="mt-3 flex flex-col gap-3 sm:flex-row"
                   onSubmit={(e) => {
@@ -667,7 +646,7 @@ export default function Page() {
                 >
                   <input
                     ref={fullInputRef}
-                    className="flex-1 rounded-2xl border border-white/20 bg-black/20 px-4 py-3 text-lg outline-none focus:border-white/40"
+                    className="flex-1 rounded-2xl border border-white/20 bg-black/20 px-4 py-3 text-sm outline-none focus:border-white/40"
                     value={fullGuess}
                     onChange={(e) => setFullGuess(e.target.value)}
                     placeholder="Type your full answer guess…"
@@ -677,48 +656,51 @@ export default function Page() {
                   </button>
                 </form>
               </div>
+            </section>
 
-              <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
-                <h3 className="text-lg font-bold">Hint (costs strikes)</h3>
-                <button
-                  className="mt-3 w-full rounded-2xl border border-white/20 px-5 py-4 text-left hover:bg-white/10"
-                  onClick={buyHintShowCategory}
-                >
-                  <div className="text-lg font-semibold">Show category</div>
-                  <div className="text-sm text-white/70">Cost: +{settings.hintCostCategory} strikes</div>
-                </button>
-              </div>
-
-              <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
+            {/* Question log (kept, but below the 2x2 grid to preserve your layout) */}
+            <section className="mt-6 rounded-3xl border border-white/15 bg-white/5 p-5">
+              <div className="flex items-center justify-between gap-3">
                 <h3 className="text-lg font-bold">Question log</h3>
-                <div className="mt-3 max-h-[320px] overflow-auto rounded-2xl border border-white/15 bg-black/20">
-                  {qaLog.length === 0 ? (
-                    <div className="p-4 text-sm text-white/70">No questions yet.</div>
-                  ) : (
-                    <ul className="divide-y divide-white/10">
-                      {qaLog.map((item, idx) => (
-                        <li key={idx} className="p-4">
-                          <div className="text-sm text-white/90">{item.q}</div>
-                          <div className="mt-1 text-xs">
-                            <span
-                              className={
-                                "inline-flex rounded-full px-2 py-1 font-semibold " +
-                                (item.a === "YES"
-                                  ? "bg-emerald-500/15 text-emerald-200"
-                                  : "bg-rose-500/15 text-rose-200")
-                              }
-                            >
-                              {item.a}
-                            </span>
-                            {item.a === "NO" && <span className="ml-2 text-white/70">(+1 strike)</span>}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                <div className="text-sm text-white/70">
+                  {questionsAsked}/{settings.maxQuestions}
                 </div>
               </div>
+
+              <div className="mt-3 max-h-[280px] overflow-auto rounded-2xl border border-white/15 bg-black/20">
+                {qaLog.length === 0 ? (
+                  <div className="p-4 text-sm text-white/70">No questions yet.</div>
+                ) : (
+                  <ul className="divide-y divide-white/10">
+                    {qaLog.map((item, idx) => (
+                      <li key={idx} className="p-4">
+                        <div className="text-sm text-white/90">{item.q}</div>
+                        <div className="mt-1 text-xs">
+                          <span
+                            className={
+                              "inline-flex rounded-full px-2 py-1 font-semibold " +
+                              (item.a === "YES"
+                                ? "bg-emerald-500/15 text-emerald-200"
+                                : "bg-rose-500/15 text-rose-200")
+                            }
+                          >
+                            {item.a}
+                          </span>
+                          {item.a === "NO" && <span className="ml-2 text-white/70">(+1 strike)</span>}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </section>
+
+            {/* Feedback moved to BOTTOM (always present) */}
+            <div className="mt-6 rounded-3xl border border-white/20 bg-[#E87722]/15 px-5 py-4 min-h-[64px] flex items-center text-base font-semibold shadow-[0_0_0_1px_rgba(255,255,255,0.06)]">
+              <span className={message ? "" : "text-white/70"}>
+                {message || "Make a move to see feedback here."}
+              </span>
+            </div>
           </>
         )}
 
