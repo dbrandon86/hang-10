@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type Phase = "home" | "setup" | "play" | "end";
 type YesNo = "YES" | "NO";
@@ -13,17 +13,17 @@ type QAItem = {
 type Settings = {
   maxStrikes: number; // 10
   maxQuestions: number; // 10
-  wrongLetterStrike: number; // 1
-  wrongFullGuessStrike: number; // 2
-  hintCostCategory: number; // 3
+  wrongLetterStrike: number; // default 1
+  wrongFullGuessStrike: number; // default 2
+  hintCostCategory: number; // default 3
 };
 
 const DEFAULT_SETTINGS: Settings = {
   maxStrikes: 10,
   maxQuestions: 10,
-  wrongLetterStrike: 1,
+  wrongLetterStrike: 1, // (5) default wrong guess strike 1
   wrongFullGuessStrike: 2,
-  hintCostCategory: 3,
+  hintCostCategory: 3, // (4) default hint strikes 3
 };
 
 function normalizeAnswer(s: string) {
@@ -40,14 +40,29 @@ function uniqLettersInAnswer(norm: string) {
   return set;
 }
 
+/**
+ * (3) Larger blanks, and clear spacing between words.
+ * - Letters: shown as "_" until revealed
+ * - Spaces: shown as a wider gap
+ * - Punctuation: shown as-is
+ */
 function maskedAnswer(norm: string, revealed: Set<string>) {
-  // Show blanks as underscores for unrevealed letters; keep spaces/punctuation visible.
-  let out = "";
+  const parts: string[] = [];
+
   for (const ch of norm) {
-    if (isLetter(ch)) out += (revealed.has(ch) ? ch : "_") + " ";
-    else out += ch + " ";
+    if (isLetter(ch)) {
+      parts.push(revealed.has(ch) ? ch : "_");
+    } else if (ch === " ") {
+      // word break indicator (extra spacing)
+      parts.push(""); // creates a gap in the join
+    } else {
+      parts.push(ch);
+    }
   }
-  return out.trimEnd();
+
+  // Join with space between letter blanks to make them larger/readable.
+  // Word breaks become extra gaps because we inserted "" for spaces.
+  return parts.join(" ").replace(/\s{3,}/g, "   ").trimEnd();
 }
 
 function allRevealed(norm: string, revealed: Set<string>) {
@@ -92,6 +107,10 @@ export default function Page() {
 
   // UI niceties
   const [showAnswerToHost, setShowAnswerToHost] = useState(false);
+
+  // Refs for enter-to-submit
+  const letterInputRef = useRef<HTMLInputElement | null>(null);
+  const fullInputRef = useRef<HTMLInputElement | null>(null);
 
   const normalized = useMemo(() => normalizeAnswer(secretAnswer), [secretAnswer]);
   const uniqueLetters = useMemo(() => uniqLettersInAnswer(normalized), [normalized]);
@@ -161,6 +180,11 @@ export default function Page() {
     setFullGuess("");
 
     setPhase("play");
+
+    // focus first input for convenience
+    setTimeout(() => {
+      letterInputRef.current?.focus();
+    }, 0);
   }
 
   function applyStrikes(add: number) {
@@ -219,6 +243,7 @@ export default function Page() {
     }
 
     setLetterGuess("");
+    setTimeout(() => letterInputRef.current?.focus(), 0);
   }
 
   function guessFullAnswer() {
@@ -236,6 +261,7 @@ export default function Page() {
       setMessage(`Wrong full guess. (+${settings.wrongFullGuessStrike} strikes)`);
     }
     setFullGuess("");
+    setTimeout(() => fullInputRef.current?.focus(), 0);
   }
 
   function buyHintShowCategory() {
@@ -254,37 +280,40 @@ export default function Page() {
   const questionsLeft = Math.max(0, settings.maxQuestions - questionsAsked);
 
   const primaryBtn =
-    "rounded-2xl bg-[#E87722] px-4 py-3 font-medium text-white hover:opacity-90";
+    "rounded-2xl bg-[#E87722] px-5 py-3 font-semibold text-white hover:opacity-90";
   const secondaryBtn =
-    "rounded-2xl border border-white/20 px-4 py-3 font-medium hover:bg-white/10";
+    "rounded-2xl border border-white/20 px-5 py-3 font-semibold hover:bg-white/10";
 
   return (
     <main className="min-h-screen bg-[#0C2340] text-white">
-      <div className="mx-auto max-w-4xl px-4 py-8">
-        <header className="mb-6 flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-[#E87722]">Hang 10</h1>
-            <p className="text-white/80">
-              10 yes/no questions + hangman, 10 strikes and you’re out.
-            </p>
+      <div className="mx-auto max-w-5xl px-4 py-8">
+        {/* (1) Bigger, centered header above gameplay */}
+        <header className="mb-8 text-center">
+          <h1 className="text-5xl font-extrabold tracking-tight text-[#E87722]">Hang 10</h1>
+          <p className="mt-2 text-lg text-white/85">
+            Ask up to 10 yes/no questions. Each <span className="font-semibold">NO</span> is a strike. 10 strikes and
+            you’re out.
+          </p>
+          <div className="mt-4 flex justify-center">
+            <button className={secondaryBtn} onClick={resetGameToHome}>
+              Reset
+            </button>
           </div>
-          <button className={secondaryBtn} onClick={resetGameToHome}>
-            Reset
-          </button>
         </header>
 
+        {/* (2) Larger, more prominent feedback area */}
         {message && (
-          <div className="mb-5 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white/90">
+          <div className="mb-6 rounded-3xl border border-white/25 bg-[#E87722]/20 px-6 py-5 text-lg font-semibold text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
             {message}
           </div>
         )}
 
         {phase === "home" && (
           <section className="rounded-3xl border border-white/15 bg-white/5 p-6">
-            <h2 className="text-xl font-semibold">Start</h2>
-            <p className="mt-2 text-white/80">
-              MVP is <span className="font-medium">local 2-player</span>: one person enters the
-              secret answer (Host), the other plays (Player).
+            <h2 className="text-2xl font-bold">Start</h2>
+            <p className="mt-2 text-white/85">
+              MVP is <span className="font-semibold">local 2-player</span>: one person enters the secret answer (Host),
+              the other plays (Player).
             </p>
 
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -310,7 +339,7 @@ export default function Page() {
             </div>
 
             <div className="mt-8 rounded-2xl border border-white/15 bg-white/5 p-4">
-              <h3 className="font-semibold">Settings</h3>
+              <h3 className="font-semibold text-lg">Settings</h3>
               <div className="mt-3 grid gap-3 sm:grid-cols-3">
                 <LabeledNumber
                   label="Wrong letter strike"
@@ -323,10 +352,7 @@ export default function Page() {
                   label="Wrong full guess strikes"
                   value={settings.wrongFullGuessStrike}
                   onChange={(v) =>
-                    setSettings((s) => ({
-                      ...s,
-                      wrongFullGuessStrike: clampInt(v, 0, 10),
-                    }))
+                    setSettings((s) => ({ ...s, wrongFullGuessStrike: clampInt(v, 0, 10) }))
                   }
                 />
                 <LabeledNumber
@@ -357,19 +383,19 @@ export default function Page() {
 
         {phase === "setup" && (
           <section className="rounded-3xl border border-white/15 bg-white/5 p-6">
-            <h2 className="text-xl font-semibold">Host setup</h2>
-            <p className="mt-2 text-white/80">Enter the secret answer and optionally a category.</p>
+            <h2 className="text-2xl font-bold">Host setup</h2>
+            <p className="mt-2 text-white/85">Enter the secret answer and optionally a category.</p>
 
             <div className="mt-5 grid gap-4">
               <div>
-                <label className="mb-2 block text-sm text-white/80">Secret answer</label>
+                <label className="mb-2 block text-sm text-white/85">Secret answer</label>
                 <input
-                  className="w-full rounded-2xl border border-white/20 bg-black/20 px-4 py-3 outline-none focus:border-white/40"
+                  className="w-full rounded-2xl border border-white/20 bg-black/20 px-4 py-3 text-lg outline-none focus:border-white/40"
                   value={secretAnswer}
                   onChange={(e) => setSecretAnswer(e.target.value)}
                   placeholder="e.g., THE GODFATHER"
                 />
-                <div className="mt-2 flex items-center gap-2 text-sm text-white/80">
+                <div className="mt-2 flex items-center gap-2 text-sm text-white/85">
                   <input
                     id="show"
                     type="checkbox"
@@ -388,9 +414,9 @@ export default function Page() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-white/80">Category (optional)</label>
+                <label className="mb-2 block text-sm text-white/85">Category (optional)</label>
                 <input
-                  className="w-full rounded-2xl border border-white/20 bg-black/20 px-4 py-3 outline-none focus:border-white/40"
+                  className="w-full rounded-2xl border border-white/20 bg-black/20 px-4 py-3 text-lg outline-none focus:border-white/40"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
                   placeholder="e.g., Movie"
@@ -413,41 +439,44 @@ export default function Page() {
           <section className="grid gap-6 lg:grid-cols-3">
             {/* Left: status + answer */}
             <div className="rounded-3xl border border-white/15 bg-white/5 p-6 lg:col-span-2">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-sm text-white/90">
-                  <span className="font-semibold text-white">Strikes:</span>{" "}
-                  <span className="font-mono">{strikeMarks(strikes) || "—"}</span>{" "}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-base text-white/95">
+                  <span className="font-bold text-white">Strikes:</span>{" "}
+                  <span className="font-mono text-lg">{strikeMarks(strikes) || "—"}</span>{" "}
                   <span className="ml-2 text-white/70">
                     ({strikes}/{settings.maxStrikes}) • {strikesLeft} left
                   </span>
                 </div>
-                <div className="text-sm text-white/90">
-                  <span className="font-semibold text-white">Questions:</span> {questionsAsked} /{" "}
-                  {settings.maxQuestions}{" "}
+                <div className="text-base text-white/95">
+                  <span className="font-bold text-white">Questions:</span> {questionsAsked} / {settings.maxQuestions}{" "}
                   <span className="ml-2 text-white/70">({questionsLeft} left)</span>
                 </div>
               </div>
 
-              <div className="mt-6 rounded-2xl border border-white/15 bg-black/20 p-5">
+              <div className="mt-6 rounded-3xl border border-white/15 bg-black/20 p-6">
                 <div className="text-xs uppercase tracking-wider text-white/70">Answer</div>
-                <div className="mt-2 break-words font-mono text-2xl leading-relaxed">{pattern}</div>
-                <div className="mt-3 text-sm text-white/70">
+
+                {/* (3) Bigger blanks and clear word spacing */}
+                <div className="mt-3 break-words font-mono text-4xl leading-relaxed tracking-widest">
+                  {pattern}
+                </div>
+
+                <div className="mt-4 text-base text-white/75">
                   Letters revealed:{" "}
-                  <span className="text-white">{revealedLetters.size}</span> /{" "}
-                  <span className="text-white">{uniqueLetters.size}</span>
+                  <span className="text-white font-semibold">{revealedLetters.size}</span> /{" "}
+                  <span className="text-white font-semibold">{uniqueLetters.size}</span>
                 </div>
               </div>
 
               {/* Actions */}
               <div className="mt-6 grid gap-6 md:grid-cols-2">
-                <div className="rounded-2xl border border-white/15 bg-white/5 p-4">
-                  <h3 className="font-semibold">Ask a yes/no question</h3>
-                  <p className="mt-1 text-sm text-white/80">
-                    Each <span className="font-medium">NO</span> is +1 strike. Max{" "}
-                    {settings.maxQuestions} questions.
+                <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
+                  <h3 className="text-lg font-bold">Ask a yes/no question</h3>
+                  <p className="mt-1 text-sm text-white/85">
+                    Each <span className="font-semibold">NO</span> is +1 strike. Max {settings.maxQuestions} questions.
                   </p>
                   <input
-                    className="mt-3 w-full rounded-2xl border border-white/20 bg-black/20 px-4 py-3 outline-none focus:border-white/40"
+                    className="mt-3 w-full rounded-2xl border border-white/20 bg-black/20 px-4 py-3 text-lg outline-none focus:border-white/40"
                     value={questionText}
                     onChange={(e) => setQuestionText(e.target.value)}
                     placeholder="e.g., Is it a movie?"
@@ -462,9 +491,7 @@ export default function Page() {
                       YES
                     </button>
                     <button
-                      className={
-                        primaryBtn + " flex-1 disabled:opacity-40"
-                      }
+                      className={primaryBtn + " flex-1 disabled:opacity-40"}
                       onClick={() => addQA("NO")}
                       disabled={questionsAsked >= settings.maxQuestions}
                     >
@@ -473,25 +500,34 @@ export default function Page() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/15 bg-white/5 p-4">
-                  <h3 className="font-semibold">Guess a letter</h3>
-                  <p className="mt-1 text-sm text-white/80">
+                <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
+                  <h3 className="text-lg font-bold">Guess a letter</h3>
+                  <p className="mt-1 text-sm text-white/85">
                     Wrong letter: +{settings.wrongLetterStrike} strike.
                   </p>
-                  <div className="mt-3 flex gap-3">
+
+                  {/* (6) Enter key submits */}
+                  <form
+                    className="mt-3 flex gap-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      guessLetter();
+                    }}
+                  >
                     <input
-                      className="w-24 rounded-2xl border border-white/20 bg-black/20 px-4 py-3 text-center text-lg font-semibold outline-none focus:border-white/40"
+                      ref={letterInputRef}
+                      className="w-28 rounded-2xl border border-white/20 bg-black/20 px-4 py-3 text-center text-2xl font-bold outline-none focus:border-white/40"
                       value={letterGuess}
                       onChange={(e) => setLetterGuess(e.target.value)}
                       placeholder="A"
                       maxLength={2}
                     />
-                    <button className={primaryBtn + " flex-1"} onClick={guessLetter}>
+                    <button type="submit" className={primaryBtn + " flex-1"}>
                       Guess
                     </button>
-                  </div>
+                  </form>
 
-                  <div className="mt-3 text-sm text-white/80">
+                  <div className="mt-3 text-sm text-white/85">
                     <div>
                       <span className="text-white/70">Wrong letters:</span>{" "}
                       <span className="font-mono">{[...wrongLetters].sort().join(" ") || "—"}</span>
@@ -499,43 +535,50 @@ export default function Page() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/15 bg-white/5 p-4 md:col-span-2">
-                  <h3 className="font-semibold">Guess the full answer</h3>
-                  <p className="mt-1 text-sm text-white/80">
+                <div className="rounded-3xl border border-white/15 bg-white/5 p-5 md:col-span-2">
+                  <h3 className="text-lg font-bold">Guess the full answer</h3>
+                  <p className="mt-1 text-sm text-white/85">
                     Wrong full guess: +{settings.wrongFullGuessStrike} strikes.
                   </p>
-                  <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+
+                  {/* (6) Enter key submits */}
+                  <form
+                    className="mt-3 flex flex-col gap-3 sm:flex-row"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      guessFullAnswer();
+                    }}
+                  >
                     <input
-                      className="flex-1 rounded-2xl border border-white/20 bg-black/20 px-4 py-3 outline-none focus:border-white/40"
+                      ref={fullInputRef}
+                      className="flex-1 rounded-2xl border border-white/20 bg-black/20 px-4 py-3 text-lg outline-none focus:border-white/40"
                       value={fullGuess}
                       onChange={(e) => setFullGuess(e.target.value)}
                       placeholder="Type your full answer guess…"
                     />
-                    <button className={primaryBtn} onClick={guessFullAnswer}>
+                    <button type="submit" className={primaryBtn}>
                       Submit
                     </button>
-                  </div>
+                  </form>
                 </div>
               </div>
             </div>
 
-            {/* Right: hints + log */}
+            {/* Right: hint + log */}
             <aside className="rounded-3xl border border-white/15 bg-white/5 p-6">
-              <h3 className="text-lg font-semibold">Hint (costs strikes)</h3>
+              <h3 className="text-xl font-bold">Hint (costs strikes)</h3>
               <div className="mt-3 grid gap-3">
                 <button
-                  className="rounded-2xl border border-white/20 px-4 py-3 text-left hover:bg-white/10"
+                  className="rounded-2xl border border-white/20 px-5 py-4 text-left hover:bg-white/10"
                   onClick={buyHintShowCategory}
                 >
-                  <div className="font-medium">Show category</div>
-                  <div className="text-sm text-white/70">
-                    Cost: +{settings.hintCostCategory} strikes
-                  </div>
+                  <div className="text-lg font-semibold">Show category</div>
+                  <div className="text-sm text-white/70">Cost: +{settings.hintCostCategory} strikes</div>
                 </button>
               </div>
 
-              <h3 className="mt-8 text-lg font-semibold">Question log</h3>
-              <div className="mt-3 max-h-[360px] overflow-auto rounded-2xl border border-white/15 bg-black/20">
+              <h3 className="mt-8 text-xl font-bold">Question log</h3>
+              <div className="mt-3 max-h-[380px] overflow-auto rounded-2xl border border-white/15 bg-black/20">
                 {qaLog.length === 0 ? (
                   <div className="p-4 text-sm text-white/70">No questions yet.</div>
                 ) : (
@@ -562,7 +605,7 @@ export default function Page() {
                 )}
               </div>
 
-              <div className="mt-6 rounded-2xl border border-white/15 bg-white/5 p-4 text-sm text-white/80">
+              <div className="mt-6 rounded-2xl border border-white/15 bg-white/5 p-4 text-sm text-white/85">
                 <div className="font-semibold text-white">Host-only (optional)</div>
                 <div className="mt-2 flex items-center gap-2">
                   <input
@@ -575,7 +618,7 @@ export default function Page() {
                   <label htmlFor="hostshow">Show answer</label>
                 </div>
                 {showAnswerToHost && (
-                  <div className="mt-2 font-mono text-white/90">{normalized.trim() || "—"}</div>
+                  <div className="mt-2 font-mono text-white/95">{normalized.trim() || "—"}</div>
                 )}
               </div>
             </aside>
@@ -584,24 +627,23 @@ export default function Page() {
 
         {phase === "end" && (
           <section className="rounded-3xl border border-white/15 bg-white/5 p-6">
-            <h2 className="text-2xl font-bold">{hasWon ? "🎉 You win!" : "💥 You lose!"}</h2>
-            <p className="mt-2 text-white/80">{message}</p>
+            <h2 className="text-3xl font-extrabold">{hasWon ? "🎉 You win!" : "💥 You lose!"}</h2>
+            <p className="mt-2 text-white/85 text-lg">{message}</p>
 
-            <div className="mt-5 rounded-2xl border border-white/15 bg-black/20 p-5">
+            <div className="mt-5 rounded-3xl border border-white/15 bg-black/20 p-6">
               <div className="text-xs uppercase tracking-wider text-white/70">Answer</div>
-              <div className="mt-2 break-words font-mono text-2xl leading-relaxed">
+              <div className="mt-3 break-words font-mono text-3xl leading-relaxed">
                 {normalizeAnswer(secretAnswer).trim()}
               </div>
               {category.trim() && (
-                <div className="mt-3 text-sm text-white/80">
+                <div className="mt-3 text-base text-white/85">
                   <span className="text-white/70">Category:</span> {category.trim()}
                 </div>
               )}
-              <div className="mt-3 text-sm text-white/80">
-                <span className="text-white/70">Strikes:</span> {strikeMarks(strikes) || "—"}{" "}
-                <span className="text-white/70">
-                  ({strikes}/{settings.maxStrikes})
-                </span>
+              <div className="mt-3 text-base text-white/85">
+                <span className="text-white/70">Strikes:</span>{" "}
+                <span className="font-mono">{strikeMarks(strikes) || "—"}</span>{" "}
+                <span className="text-white/70">({strikes}/{settings.maxStrikes})</span>
               </div>
             </div>
 
@@ -620,6 +662,7 @@ export default function Page() {
                   setLetterGuess("");
                   setFullGuess("");
                   setPhase("play");
+                  setTimeout(() => letterInputRef.current?.focus(), 0);
                 }}
               >
                 Play Again (same answer)
