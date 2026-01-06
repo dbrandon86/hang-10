@@ -49,9 +49,12 @@ function AnswerDisplay({ normalized, revealed }: { normalized: string; revealed:
   const items: React.ReactNode[] = [];
   for (let i = 0; i < normalized.length; i++) {
     const ch = normalized[i];
+
     if (ch === " ") {
       items.push(<span key={`w-${i}`} className="inline-block w-10" />);
-    } else if (isLetter(ch)) {
+      continue;
+    }
+    if (isLetter(ch)) {
       const shown = revealed.has(ch) ? ch : "_";
       items.push(
         <span
@@ -62,16 +65,17 @@ function AnswerDisplay({ normalized, revealed }: { normalized: string; revealed:
           {shown}
         </span>
       );
-    } else {
-      items.push(
-        <span
-          key={`p-${i}`}
-          className="font-mono text-4xl sm:text-6xl font-normal tracking-tight text-white/90 mx-1"
-        >
-          {ch}
-        </span>
-      );
+      continue;
     }
+
+    items.push(
+      <span
+        key={`p-${i}`}
+        className="font-mono text-4xl sm:text-6xl font-normal tracking-tight text-white/90 mx-1"
+      >
+        {ch}
+      </span>
+    );
   }
   return <div className="flex flex-wrap justify-center items-center">{items}</div>;
 }
@@ -352,12 +356,7 @@ export default function Page() {
   const secondaryBtn =
     "rounded-2xl border border-white/20 px-4 py-2.5 text-sm font-semibold hover:bg-white/10";
 
-  // Smaller cards for guess letter + question
-  const smallCard =
-    "rounded-3xl border border-white/15 bg-white/5 p-4";
-  // Standard cards for hint + full answer (same size)
-  const standardCard =
-    "rounded-3xl border border-white/15 bg-white/5 p-5";
+  const cardBase = "rounded-3xl border border-white/15 bg-white/5";
 
   return (
     <main className="min-h-screen bg-[#0C2340] text-white">
@@ -384,17 +383,6 @@ export default function Page() {
             </button>
           </div>
         </header>
-
-        {/* Strikes (top, prominent) */}
-        <div className="mb-6 rounded-3xl border border-[#E87722]/35 bg-black/30 px-6 py-5 min-h-[88px] flex flex-col justify-center shadow-[0_0_0_1px_rgba(232,119,34,0.22),0_12px_30px_rgba(0,0,0,0.35)]">
-          <div className="text-sm uppercase tracking-wider text-white/70">Strikes</div>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <span className="font-mono text-3xl text-red-400">{strikeMarks(strikes) || "—"}</span>
-            <span className="text-white/75">
-              ({strikes}/{settings.maxStrikes}) • {strikesLeft} left
-            </span>
-          </div>
-        </div>
 
         {phase === "home" && (
           <section className="rounded-3xl border border-white/15 bg-white/5 p-6">
@@ -517,13 +505,7 @@ export default function Page() {
                 <button className={primaryBtn} onClick={startGame}>
                   Start Game
                 </button>
-                <button
-                  className={secondaryBtn}
-                  onClick={() => {
-                    sfx.click();
-                    setPhase("home");
-                  }}
-                >
+                <button className={secondaryBtn} onClick={() => setPhase("home")}>
                   Back
                 </button>
               </div>
@@ -532,9 +514,9 @@ export default function Page() {
         )}
 
         {phase === "play" && (
-          <>
-            {/* Answer full width */}
-            <section className="mb-6 rounded-3xl border border-white/15 bg-black/25 p-8 min-h-[190px] flex flex-col justify-center">
+          <section className="grid gap-6 lg:grid-cols-3">
+            {/* Row 1 Col 1-2: Answer */}
+            <div className={`${cardBase} lg:col-span-2 p-8 min-h-[220px] flex flex-col justify-center bg-black/25`}>
               <div className="text-xs uppercase tracking-wider text-white/70 text-center">Answer</div>
               <div className="mt-3">
                 <AnswerDisplay normalized={normalized} revealed={revealedLetters} />
@@ -544,136 +526,130 @@ export default function Page() {
                 <span className="text-white font-semibold">{revealedLetters.size}</span> /{" "}
                 <span className="text-white font-semibold">{uniqueLetters.size}</span>
               </div>
-            </section>
+            </div>
 
-            {/* 2x2 grid of action boxes */}
-            <section className="grid gap-6 md:grid-cols-2">
-              {/* TOP LEFT: Guess a letter (smaller) */}
-              <div className={smallCard}>
-                <h3 className="text-base font-bold">Guess a letter</h3>
-                <p className="mt-1 text-xs text-white/85">
-                  Wrong letter: +{settings.wrongLetterStrike} strike.
-                </p>
-
-                <form
-                  className="mt-3 flex gap-3"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    guessLetter();
-                  }}
-                >
-                  <input
-                    ref={letterInputRef}
-                    className="w-24 rounded-2xl border border-white/20 bg-black/20 px-3 py-2.5 text-center text-xl font-bold outline-none focus:border-white/40"
-                    value={letterGuess}
-                    onChange={(e) => setLetterGuess(e.target.value)}
-                    placeholder="A"
-                    maxLength={2}
-                  />
-                  <button type="submit" className={primaryBtn + " flex-1"}>
-                    Guess
-                  </button>
-                </form>
-
-                <div className="mt-3 text-xs text-white/85">
-                  <span className="text-white/70">Wrong:</span>{" "}
-                  <span className="font-mono">{[...wrongLetters].sort().join(" ") || "—"}</span>
+            {/* Row 1 Col 3: Feedback (top right) */}
+            <div
+              className={`${cardBase} p-5 bg-[#E87722]/15 border-white/20 min-h-[220px] flex`}
+            >
+              <div className="w-full flex flex-col">
+                <div className="text-xs uppercase tracking-wider text-white/70">Feedback</div>
+                <div className="mt-3 flex-1 rounded-2xl border border-white/15 bg-black/20 p-4 text-base font-semibold flex items-center">
+                  <span className={message ? "" : "text-white/70"}>
+                    {message || "Feedback will appear here."}
+                  </span>
                 </div>
-              </div>
-
-              {/* TOP RIGHT: Hint (standard, same size as full answer) */}
-              <div className={standardCard}>
-                <h3 className="text-base font-bold">Hint (costs strikes)</h3>
-                <button
-                  className="mt-3 w-full rounded-2xl border border-white/20 px-5 py-4 text-left hover:bg-white/10"
-                  onClick={buyHintShowCategory}
-                >
-                  <div className="text-lg font-semibold">Show category</div>
-                  <div className="text-sm text-white/70">Cost: +{settings.hintCostCategory} strikes</div>
-                </button>
-
                 <div className="mt-3 text-xs text-white/70">
-                  Tip: On phones, sounds may require one tap first.
+                  Sounds: {soundsOn ? "On" : "Off"} • Try Enter to submit guesses.
                 </div>
               </div>
+            </div>
 
-              {/* BOTTOM LEFT: Yes/No question (smaller) */}
-              <div className={smallCard}>
-                <h3 className="text-base font-bold">Ask a yes/no question</h3>
-                <p className="mt-1 text-xs text-white/85">
-                  Each <span className="font-semibold">NO</span> is +1 strike. {questionsLeft} question(s) left.
-                </p>
+            {/* Row 2 Col 1-2: Strikes (stand out) */}
+            <div
+              className={`${cardBase} lg:col-span-2 px-6 py-5 min-h-[96px] flex flex-col justify-center bg-black/30 border-[#E87722]/35 shadow-[0_0_0_1px_rgba(232,119,34,0.22),0_12px_30px_rgba(0,0,0,0.35)]`}
+            >
+              <div className="text-sm uppercase tracking-wider text-white/70">Strikes</div>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span className="font-mono text-3xl text-red-400">{strikeMarks(strikes) || "—"}</span>
+                <span className="text-white/75">
+                  ({strikes}/{settings.maxStrikes}) • {Math.max(0, settings.maxStrikes - strikes)} left
+                </span>
+              </div>
+            </div>
 
+            {/* Row 2 Col 3: Hint */}
+            <div className={`${cardBase} p-5`}>
+              <h3 className="text-base font-bold">Hint</h3>
+              <button
+                className="mt-3 w-full rounded-2xl border border-white/20 px-5 py-4 text-left hover:bg-white/10"
+                onClick={buyHintShowCategory}
+              >
+                <div className="text-lg font-semibold">Show category</div>
+                <div className="text-sm text-white/70">Cost: +{settings.hintCostCategory} strikes</div>
+              </button>
+              <div className="mt-3 text-xs text-white/70">
+                Category set: {category.trim() ? category.trim() : "—"}
+              </div>
+            </div>
+
+            {/* Row 3 Col 1: Guess letter */}
+            <div className={`${cardBase} p-4`}>
+              <h3 className="text-base font-bold">Guess a letter</h3>
+              <p className="mt-1 text-xs text-white/85">Wrong letter: +{settings.wrongLetterStrike} strike.</p>
+              <form
+                className="mt-3 flex gap-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  guessLetter();
+                }}
+              >
                 <input
-                  className="mt-3 w-full rounded-2xl border border-white/20 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-white/40"
-                  value={questionText}
-                  onChange={(e) => setQuestionText(e.target.value)}
-                  placeholder="e.g., Is it a movie?"
-                  disabled={questionsAsked >= settings.maxQuestions}
+                  ref={letterInputRef}
+                  className="w-24 rounded-2xl border border-white/20 bg-black/20 px-3 py-2.5 text-center text-xl font-bold outline-none focus:border-white/40"
+                  value={letterGuess}
+                  onChange={(e) => setLetterGuess(e.target.value)}
+                  placeholder="A"
+                  maxLength={2}
                 />
-
-                <div className="mt-3 flex gap-3">
-                  <button
-                    className={secondaryBtn + " flex-1 disabled:opacity-40"}
-                    onClick={() => addQA("YES")}
-                    disabled={questionsAsked >= settings.maxQuestions}
-                  >
-                    YES
-                  </button>
-                  <button
-                    className={primaryBtn + " flex-1 disabled:opacity-40"}
-                    onClick={() => addQA("NO")}
-                    disabled={questionsAsked >= settings.maxQuestions}
-                  >
-                    NO (+1)
-                  </button>
-                </div>
+                <button type="submit" className="rounded-2xl bg-[#E87722] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 flex-1">
+                  Guess
+                </button>
+              </form>
+              <div className="mt-3 text-xs text-white/85">
+                <span className="text-white/70">Wrong:</span>{" "}
+                <span className="font-mono">{[...wrongLetters].sort().join(" ") || "—"}</span>
               </div>
+            </div>
 
-              {/* BOTTOM RIGHT: Guess full answer (standard, same size as hint) */}
-              <div className={standardCard}>
-                <h3 className="text-base font-bold">Guess the full answer</h3>
-                <p className="mt-1 text-xs text-white/85">
-                  Wrong full guess: +{settings.wrongFullGuessStrike} strike.
-                </p>
-
-                <form
-                  className="mt-3 flex flex-col gap-3 sm:flex-row"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    guessFullAnswer();
-                  }}
+            {/* Row 3 Col 2: Yes/No */}
+            <div className={`${cardBase} p-4`}>
+              <h3 className="text-base font-bold">Yes/No question</h3>
+              <p className="mt-1 text-xs text-white/85">
+                Each <span className="font-semibold">NO</span> is +1 strike. {questionsLeft} left.
+              </p>
+              <input
+                className="mt-3 w-full rounded-2xl border border-white/20 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-white/40"
+                value={questionText}
+                onChange={(e) => setQuestionText(e.target.value)}
+                placeholder="e.g., Is it a movie?"
+                disabled={questionsAsked >= settings.maxQuestions}
+              />
+              <div className="mt-3 flex gap-3">
+                <button
+                  className={secondaryBtn + " flex-1 disabled:opacity-40"}
+                  onClick={() => addQA("YES")}
+                  disabled={questionsAsked >= settings.maxQuestions}
                 >
-                  <input
-                    ref={fullInputRef}
-                    className="flex-1 rounded-2xl border border-white/20 bg-black/20 px-4 py-3 text-sm outline-none focus:border-white/40"
-                    value={fullGuess}
-                    onChange={(e) => setFullGuess(e.target.value)}
-                    placeholder="Type your full answer guess…"
-                  />
-                  <button type="submit" className={primaryBtn}>
-                    Submit
-                  </button>
-                </form>
+                  YES
+                </button>
+                <button
+                  className={"rounded-2xl bg-[#E87722] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 flex-1 disabled:opacity-40"}
+                  onClick={() => addQA("NO")}
+                  disabled={questionsAsked >= settings.maxQuestions}
+                >
+                  NO (+1)
+                </button>
               </div>
-            </section>
+              <div className="mt-3 text-xs text-white/70">
+                Asked: {questionsAsked}/{settings.maxQuestions}
+              </div>
+            </div>
 
-            {/* Question log (kept, but below the 2x2 grid to preserve your layout) */}
-            <section className="mt-6 rounded-3xl border border-white/15 bg-white/5 p-5">
+            {/* Row 3 Col 3: Question Log (bottom right) */}
+            <div className={`${cardBase} p-5`}>
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-bold">Question log</h3>
-                <div className="text-sm text-white/70">
-                  {questionsAsked}/{settings.maxQuestions}
-                </div>
+                <h3 className="text-base font-bold">Question log</h3>
+                <div className="text-xs text-white/70">{questionsAsked}/{settings.maxQuestions}</div>
               </div>
 
-              <div className="mt-3 max-h-[280px] overflow-auto rounded-2xl border border-white/15 bg-black/20">
+              <div className="mt-3 max-h-[260px] overflow-auto rounded-2xl border border-white/15 bg-black/20">
                 {qaLog.length === 0 ? (
                   <div className="p-4 text-sm text-white/70">No questions yet.</div>
                 ) : (
                   <ul className="divide-y divide-white/10">
                     {qaLog.map((item, idx) => (
-                      <li key={idx} className="p-4">
+                      <li key={idx} className="p-3">
                         <div className="text-sm text-white/90">{item.q}</div>
                         <div className="mt-1 text-xs">
                           <span
@@ -693,15 +669,34 @@ export default function Page() {
                   </ul>
                 )}
               </div>
-            </section>
-
-            {/* Feedback moved to BOTTOM (always present) */}
-            <div className="mt-6 rounded-3xl border border-white/20 bg-[#E87722]/15 px-5 py-4 min-h-[64px] flex items-center text-base font-semibold shadow-[0_0_0_1px_rgba(255,255,255,0.06)]">
-              <span className={message ? "" : "text-white/70"}>
-                {message || "Make a move to see feedback here."}
-              </span>
             </div>
-          </>
+
+            {/* Row 4: Full answer spans columns 1-2 (keeps 3x3 as requested + avoids squeezing) */}
+            <div className={`${cardBase} lg:col-span-2 p-5`}>
+              <h3 className="text-base font-bold">Guess the full answer</h3>
+              <p className="mt-1 text-xs text-white/85">
+                Wrong full guess: +{settings.wrongFullGuessStrike} strike.
+              </p>
+              <form
+                className="mt-3 flex flex-col gap-3 sm:flex-row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  guessFullAnswer();
+                }}
+              >
+                <input
+                  ref={fullInputRef}
+                  className="flex-1 rounded-2xl border border-white/20 bg-black/20 px-4 py-3 text-sm outline-none focus:border-white/40"
+                  value={fullGuess}
+                  onChange={(e) => setFullGuess(e.target.value)}
+                  placeholder="Type your full answer guess…"
+                />
+                <button type="submit" className={primaryBtn}>
+                  Submit
+                </button>
+              </form>
+            </div>
+          </section>
         )}
 
         {phase === "end" && (
