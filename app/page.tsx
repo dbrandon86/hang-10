@@ -45,6 +45,35 @@ function strikeMarks(strikes: number) {
   return "X".repeat(Math.max(0, strikes)).split("").join(" ");
 }
 
+function useResizeObserver<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const el = ref.current;
+
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect;
+      if (!cr) return;
+      setSize({ width: cr.width, height: cr.height });
+    });
+
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return { ref, size };
+}
+
+/**
+ * Refinements added:
+ * 1) Shrink letters dynamically if a single word is long (fit-to-width)
+ * 2) Animate a word when it becomes fully revealed
+ * 3) Center single-line answers vertically more aggressively
+ *
+ * Also: wrap only between words (words never break mid-word).
+ */
 function AnswerDisplay({
   normalized,
   revealed,
@@ -52,40 +81,148 @@ function AnswerDisplay({
   normalized: string;
   revealed: Set<string>;
 }) {
-  const words = normalized.split(" ");
+  const words = useMemo(() => normalized.split(" "), [normalized]);
+
+  // Determine the longest word's "visual length" by counting letters/digits/punct as 1 each.
+  const longestWordLen = useMemo(() => {
+    let max = 0;
+    for (const w of words) max = Math.max(max, w.length);
+    return max;
+  }, [words]);
+
+  const { ref: containerRef, size } = useResizeObserver<HTMLDivElement>();
+  const wordRefs = useRef<Array<HTMLDivElement | null>>([]);
+
+  const [isSingleLine, setIsSingleLine] = useState(true);
+
+  // Check if words wrapped to multiple lines (based on offsetTop changes)
+  useEffect(() => {
+    const tops = wordRefs.current
+      .map((el) => (el ? el.offsetTop : null))
+      .filter((v): v is number => v !== null);
+    if (tops.length <= 1) {
+      setIsSingleLine(true);
+      return;
+    }
+    const first = tops[0];
+    setIsSingleLine(tops.every((t) => t === first));
+  }, [size.width, normalized]);
+
+  // Fit-to-width scaling for very long single words (or any long word)
+  // We compute a "target cell width" and font size that tries to keep the longest word on one line.
+  // This only kicks in when the word is long relative to available width.
+  const available = Math.max(0, size.width - 32); // small buffer
+  const baseCell = 40; // px (matches sm:w-10 feel)
+  const baseFont = 56; // px (sm:text-6xl-ish)
+  const minCell = 20;
+  const minFont = 28;
+
+  // Approx width of longest word if we keep base sizes
+  const idealWordPx = longestWordLen * (baseCell + 8); // cell + margin-ish
+  const needsShrink = longestWordLen >= 10 && idealWordPx > available && available > 0;
+
+  const shrinkRatio = needsShrink ? Math.max(available / idealWordPx, 0.55) : 1;
+  const cellPx = Math.round(
+    clampInt(Math.floor(baseCell * shrinkRatio), minCell, baseCell)
+  );
+  const fontPx = Math.round(
+    clampInt(Math.floor(baseFont * shrinkRatio), minFont, baseFont)
+  );
+
+  // Word reveal animation: if all letters in a word are revealed, animate it once.
+  // We'll track which words have already animated for the current answer.
+  const [animatedWords, setAnimatedWords] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    // Reset animation tracking when answer changes
+    setAnimatedWords(new Set());
+  }, [normalized]);
+
+  useEffect(() => {
+    // Mark newly completed words
+    setAnimatedWords((prev) => {
+      const next = new Set(prev);
+      words.forEach((w, idx) => {
+        if (next.has(idx)) return;
+
+        let complete = true;
+        for (const ch of w) {
+          if (isLetter(ch) && !revealed.has(ch)) {
+            complete = false;
+            break;
+          }
+        }
+        if (complete && w.length > 0) next.add(idx);
+      });
+      return next;
+    });
+  }, [words, revealed]);
 
   return (
-    <div className="flex flex-wrap justify-center gap-x-8 gap-y-4">
-      {words.map((word, wi) => (
-        <div key={wi} className="flex">
-          {word.split("").map((ch, li) => {
-            if (!isLetter(ch)) {
-              return (
-                <span
-                  key={li}
-                  className="mx-1 font-mono text-4xl sm:text-6xl text-white/90"
-                >
-                  {ch}
-                </span>
-              );
-            }
+    <div className={isSingleLine ? "flex items-center justify-center min-h-[110px]" : ""}>
+      <style>{`
+        @keyframes wordPop {
+          0% { transform: scale(1); filter: brightness(1); }
+          40% { transform: scale(1.04); filter: brightness(1.15); }
+          100% { transform: scale(1); filter: brightness(1); }
+        }
+      `}</style>
 
-            const shown = revealed.has(ch) ? ch : "_";
-            return (
-              <span
-                key={li}
-                className="mx-1 w-8 sm:w-10 text-center font-mono text-4xl sm:text-6xl font-normal tracking-tight text-[#E87722]"
-              >
-                {shown}
-              </span>
-            );
-          })}
-        </div>
-      ))}
+      <div
+        ref={containerRef}
+        className="flex flex-wrap justify-center gap-x-8 gap-y-4 w-full"
+        aria-label="answer display"
+      >
+        {words.map((word, wi) => {
+          const shouldAnimate = animatedWords.has(wi);
+          return (
+            <div
+              key={wi}
+              ref={(el) => {
+                wordRefs.current[wi] = el;
+              }}
+              className="flex"
+              style={
+                shouldAnimate
+                  ? { animation: "wordPop 420ms ease-out" }
+                  : undefined
+              }
+            >
+              {word.split("").map((ch, li) => {
+                if (!isLetter(ch)) {
+                  return (
+                    <span
+                      key={li}
+                      className="mx-1 font-mono text-white/90"
+                      style={{ fontSize: fontPx }}
+                    >
+                      {ch}
+                    </span>
+                  );
+                }
+
+                const shown = revealed.has(ch) ? ch : "_";
+                return (
+                  <span
+                    key={li}
+                    className="mx-1 text-center font-mono font-normal tracking-tight text-[#E87722]"
+                    style={{
+                      width: cellPx,
+                      fontSize: fontPx,
+                      lineHeight: 1.05,
+                    }}
+                    aria-label={shown === "_" ? "blank" : shown}
+                  >
+                    {shown}
+                  </span>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
-
 
 function useSfx(enabled: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -166,7 +303,7 @@ export default function Page() {
   const [wrongLetters, setWrongLetters] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState("");
 
-  // ✅ Fix: persist win/lose so end screen renders correctly
+  // Persist win/lose state so end screen is correct
   const [didWin, setDidWin] = useState<boolean | null>(null);
 
   const [questionText, setQuestionText] = useState("");
@@ -181,7 +318,6 @@ export default function Page() {
   const normalized = useMemo(() => normalizeAnswer(secretAnswer), [secretAnswer]);
   const uniqueLetters = useMemo(() => uniqLettersInAnswer(normalized), [normalized]);
 
-  // Important: do NOT gate this on phase; we decide win during play but store result in didWin
   const hasWon = useMemo(() => {
     if (!normalized.trim()) return false;
     return allRevealed(normalized, revealedLetters);
@@ -228,7 +364,6 @@ export default function Page() {
     setRevealedLetters(new Set());
     setWrongLetters(new Set());
     setMessage("");
-
     setDidWin(null);
 
     setQuestionText("");
@@ -374,7 +509,6 @@ export default function Page() {
   return (
     <main className="min-h-screen bg-[#0C2340] text-white">
       <div className="mx-auto max-w-6xl px-4 py-8">
-        {/* Header */}
         <header className="mb-6 text-center">
           <h1 className="text-5xl font-extrabold tracking-tight text-[#E87722]">Hang 10</h1>
           <p className="mt-2 text-lg text-white/85">
@@ -401,7 +535,7 @@ export default function Page() {
           <section className="rounded-3xl border border-white/15 bg-white/5 p-6">
             <h2 className="text-2xl font-bold">Start</h2>
             <p className="mt-2 text-white/85">
-              MVP is <span className="font-semibold">local 2-player</span>: one person enters the secret answer (Host),
+              Hang 10 is <span className="font-semibold">local 2-player</span>: one person enters the secret answer (Host),
               the other plays (Player).
             </p>
 
@@ -529,7 +663,7 @@ export default function Page() {
         {phase === "play" && (
           <section className="grid gap-6 lg:grid-cols-3">
             {/* Row 1 Col 1-2: Answer */}
-            <div className={`${cardBase} lg:col-span-2 p-8 min-h-[220px] flex flex-col justify-center bg-black/25`}>
+            <div className={`${cardBase} lg:col-span-2 p-8 min-h-[240px] flex flex-col justify-center bg-black/25`}>
               <div className="text-xs uppercase tracking-wider text-white/70 text-center">Answer</div>
               <div className="mt-3">
                 <AnswerDisplay normalized={normalized} revealed={revealedLetters} />
@@ -542,7 +676,7 @@ export default function Page() {
             </div>
 
             {/* Row 1 Col 3: Feedback (top right) */}
-            <div className={`${cardBase} p-5 bg-[#E87722]/15 border-white/20 min-h-[220px] flex`}>
+            <div className={`${cardBase} p-5 bg-[#E87722]/15 border-white/20 min-h-[240px] flex`}>
               <div className="w-full flex flex-col">
                 <div className="text-xs uppercase tracking-wider text-white/70">Feedback</div>
                 <div className="mt-3 flex-1 rounded-2xl border border-white/15 bg-black/20 p-4 text-base font-semibold flex items-center">
@@ -716,23 +850,6 @@ export default function Page() {
               {didWin === true ? "🎉 You win!" : didWin === false ? "💥 You lose!" : "Game Over"}
             </h2>
             <p className="mt-2 text-white/85 text-lg">{message}</p>
-
-            <div className="mt-5 rounded-3xl border border-white/15 bg-black/20 p-6">
-              <div className="text-xs uppercase tracking-wider text-white/70">Answer</div>
-              <div className="mt-3 break-words font-mono text-3xl leading-relaxed text-[#E87722]">
-                {normalizeAnswer(secretAnswer).trim()}
-              </div>
-              {category.trim() && (
-                <div className="mt-3 text-base text-white/85">
-                  <span className="text-white/70">Category:</span> {category.trim()}
-                </div>
-              )}
-              <div className="mt-3 text-base text-white/85">
-                <span className="text-white/70">Strikes:</span>{" "}
-                <span className="font-mono text-red-400">{strikeMarks(strikes) || "—"}</span>{" "}
-                <span className="text-white/70">({strikes}/{settings.maxStrikes})</span>
-              </div>
-            </div>
 
             <div className="mt-6 flex flex-wrap gap-3">
               <button
