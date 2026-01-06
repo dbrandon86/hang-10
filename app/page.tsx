@@ -159,6 +159,9 @@ export default function Page() {
   const [wrongLetters, setWrongLetters] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState("");
 
+  // ✅ Fix: persist win/lose so end screen renders correctly
+  const [didWin, setDidWin] = useState<boolean | null>(null);
+
   const [questionText, setQuestionText] = useState("");
   const [letterGuess, setLetterGuess] = useState("");
   const [fullGuess, setFullGuess] = useState("");
@@ -171,30 +174,30 @@ export default function Page() {
   const normalized = useMemo(() => normalizeAnswer(secretAnswer), [secretAnswer]);
   const uniqueLetters = useMemo(() => uniqLettersInAnswer(normalized), [normalized]);
 
+  // Important: do NOT gate this on phase; we decide win during play but store result in didWin
   const hasWon = useMemo(() => {
-    if (phase !== "play") return false;
     if (!normalized.trim()) return false;
     return allRevealed(normalized, revealedLetters);
-  }, [phase, normalized, revealedLetters]);
+  }, [normalized, revealedLetters]);
 
-  const hasLost = useMemo(
-    () => phase === "play" && strikes >= settings.maxStrikes,
-    [phase, strikes, settings.maxStrikes]
-  );
+  const hasLost = useMemo(() => strikes >= settings.maxStrikes, [strikes, settings.maxStrikes]);
 
   useEffect(() => {
     if (phase !== "play") return;
+
     if (hasWon) {
+      setDidWin(true);
       setPhase("end");
       setMessage("You solved it!");
       sfx.win();
     } else if (hasLost) {
+      setDidWin(false);
       setPhase("end");
       setMessage("You hit 10 strikes.");
       sfx.lose();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasWon, hasLost]);
+  }, [hasWon, hasLost, phase]);
 
   const strikesLeft = Math.max(0, settings.maxStrikes - strikes);
   const questionsLeft = Math.max(0, settings.maxQuestions - questionsAsked);
@@ -219,6 +222,8 @@ export default function Page() {
     setWrongLetters(new Set());
     setMessage("");
 
+    setDidWin(null);
+
     setQuestionText("");
     setLetterGuess("");
     setFullGuess("");
@@ -226,6 +231,7 @@ export default function Page() {
 
   function startGame() {
     sfx.click();
+    setDidWin(null);
 
     const trimmed = secretAnswer.trim();
     if (!trimmed) {
@@ -529,9 +535,7 @@ export default function Page() {
             </div>
 
             {/* Row 1 Col 3: Feedback (top right) */}
-            <div
-              className={`${cardBase} p-5 bg-[#E87722]/15 border-white/20 min-h-[220px] flex`}
-            >
+            <div className={`${cardBase} p-5 bg-[#E87722]/15 border-white/20 min-h-[220px] flex`}>
               <div className="w-full flex flex-col">
                 <div className="text-xs uppercase tracking-wider text-white/70">Feedback</div>
                 <div className="mt-3 flex-1 rounded-2xl border border-white/15 bg-black/20 p-4 text-base font-semibold flex items-center">
@@ -545,7 +549,7 @@ export default function Page() {
               </div>
             </div>
 
-            {/* Row 2 Col 1-2: Strikes (stand out) */}
+            {/* Row 2 Col 1-2: Strikes */}
             <div
               className={`${cardBase} lg:col-span-2 px-6 py-5 min-h-[96px] flex flex-col justify-center bg-black/30 border-[#E87722]/35 shadow-[0_0_0_1px_rgba(232,119,34,0.22),0_12px_30px_rgba(0,0,0,0.35)]`}
             >
@@ -553,7 +557,7 @@ export default function Page() {
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <span className="font-mono text-3xl text-red-400">{strikeMarks(strikes) || "—"}</span>
                 <span className="text-white/75">
-                  ({strikes}/{settings.maxStrikes}) • {Math.max(0, settings.maxStrikes - strikes)} left
+                  ({strikes}/{settings.maxStrikes}) • {strikesLeft} left
                 </span>
               </div>
             </div>
@@ -568,9 +572,7 @@ export default function Page() {
                 <div className="text-lg font-semibold">Show category</div>
                 <div className="text-sm text-white/70">Cost: +{settings.hintCostCategory} strikes</div>
               </button>
-              <div className="mt-3 text-xs text-white/70">
-                Category set: {category.trim() ? category.trim() : "—"}
-              </div>
+              <div className="mt-3 text-xs text-white/70">Category set: {category.trim() || "—"}</div>
             </div>
 
             {/* Row 3 Col 1: Guess letter */}
@@ -592,7 +594,7 @@ export default function Page() {
                   placeholder="A"
                   maxLength={2}
                 />
-                <button type="submit" className="rounded-2xl bg-[#E87722] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 flex-1">
+                <button type="submit" className={primaryBtn + " flex-1"}>
                   Guess
                 </button>
               </form>
@@ -624,7 +626,7 @@ export default function Page() {
                   YES
                 </button>
                 <button
-                  className={"rounded-2xl bg-[#E87722] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 flex-1 disabled:opacity-40"}
+                  className={primaryBtn + " flex-1 disabled:opacity-40"}
                   onClick={() => addQA("NO")}
                   disabled={questionsAsked >= settings.maxQuestions}
                 >
@@ -636,11 +638,13 @@ export default function Page() {
               </div>
             </div>
 
-            {/* Row 3 Col 3: Question Log (bottom right) */}
+            {/* Row 3 Col 3: Question log (bottom right) */}
             <div className={`${cardBase} p-5`}>
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-base font-bold">Question log</h3>
-                <div className="text-xs text-white/70">{questionsAsked}/{settings.maxQuestions}</div>
+                <div className="text-xs text-white/70">
+                  {questionsAsked}/{settings.maxQuestions}
+                </div>
               </div>
 
               <div className="mt-3 max-h-[260px] overflow-auto rounded-2xl border border-white/15 bg-black/20">
@@ -671,7 +675,7 @@ export default function Page() {
               </div>
             </div>
 
-            {/* Row 4: Full answer spans columns 1-2 (keeps 3x3 as requested + avoids squeezing) */}
+            {/* Full answer spans columns 1-2 under row 3 */}
             <div className={`${cardBase} lg:col-span-2 p-5`}>
               <h3 className="text-base font-bold">Guess the full answer</h3>
               <p className="mt-1 text-xs text-white/85">
@@ -701,7 +705,9 @@ export default function Page() {
 
         {phase === "end" && (
           <section className="rounded-3xl border border-white/15 bg-white/5 p-6">
-            <h2 className="text-3xl font-extrabold">{hasWon ? "🎉 You win!" : "💥 You lose!"}</h2>
+            <h2 className="text-3xl font-extrabold">
+              {didWin === true ? "🎉 You win!" : didWin === false ? "💥 You lose!" : "Game Over"}
+            </h2>
             <p className="mt-2 text-white/85 text-lg">{message}</p>
 
             <div className="mt-5 rounded-3xl border border-white/15 bg-black/20 p-6">
@@ -726,6 +732,7 @@ export default function Page() {
                 className={primaryBtn}
                 onClick={() => {
                   sfx.click();
+                  setDidWin(null);
                   setStrikes(0);
                   setQuestionsAsked(0);
                   setQaLog([]);
@@ -746,6 +753,7 @@ export default function Page() {
                 className={secondaryBtn}
                 onClick={() => {
                   sfx.click();
+                  setDidWin(null);
                   setMessage("");
                   setPhase("setup");
                 }}
