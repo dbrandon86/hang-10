@@ -14,7 +14,7 @@ type Settings = {
   maxStrikes: number; // 10
   maxQuestions: number; // 10
   wrongLetterStrike: number; // default 1
-  wrongFullGuessStrike: number; // default 1 (changed)
+  wrongFullGuessStrike: number; // default 1
   hintCostCategory: number; // default 3
 };
 
@@ -22,7 +22,7 @@ const DEFAULT_SETTINGS: Settings = {
   maxStrikes: 10,
   maxQuestions: 10,
   wrongLetterStrike: 1,
-  wrongFullGuessStrike: 1, // ✅ default full answer penalty = 1
+  wrongFullGuessStrike: 1,
   hintCostCategory: 3,
 };
 
@@ -47,6 +47,7 @@ function allRevealed(norm: string, revealed: Set<string>) {
   return true;
 }
 
+// ✅ Fix: clampInt exists (used in Settings inputs)
 function clampInt(n: number, min: number, max: number) {
   if (Number.isNaN(n)) return min;
   return Math.max(min, Math.min(max, n));
@@ -61,25 +62,24 @@ function strikeMarks(strikes: number) {
  * Answer renderer:
  * - Less space between letters
  * - More space between words
- * - Bigger blanks
+ * - Auburn orange dashes + revealed letters
+ * - Not bold (per request)
  */
 function AnswerDisplay(props: { normalized: string; revealed: Set<string> }) {
   const { normalized, revealed } = props;
 
-  // Tuning knobs:
   const letterGapClass = "mx-1"; // less space between letters
   const wordGapClass = "w-10"; // more space between words
   const letterBoxClass =
-    "inline-flex items-center justify-center font-mono text-4xl sm:text-5xl font-extrabold tracking-tight";
+    "inline-flex items-center justify-center font-mono text-4xl sm:text-5xl font-normal tracking-tight text-[#E87722]";
   const letterWidthClass = "w-8 sm:w-10";
-  const punctClass = "font-mono text-4xl sm:text-5xl font-extrabold tracking-tight mx-1";
+  const punctClass = "font-mono text-4xl sm:text-5xl font-normal tracking-tight mx-1 text-white/90";
 
   const items: React.ReactNode[] = [];
   for (let i = 0; i < normalized.length; i++) {
     const ch = normalized[i];
 
     if (ch === " ") {
-      // Big visible gap between words
       items.push(<span key={`w-${i}`} className={`inline-block ${wordGapClass}`} />);
       continue;
     }
@@ -98,7 +98,6 @@ function AnswerDisplay(props: { normalized: string; revealed: Set<string> }) {
       continue;
     }
 
-    // punctuation stays visible
     items.push(
       <span key={`p-${i}`} className={punctClass}>
         {ch}
@@ -122,7 +121,7 @@ function useSfx(enabled: boolean) {
 
   function getCtx() {
     if (!ctxRef.current) {
-      // @ts-expect-error - Safari prefix fallback not needed in most cases but harmless to ignore
+      // @ts-expect-error Safari prefix fallback
       const Ctx = window.AudioContext || window.webkitAudioContext;
       ctxRef.current = new Ctx();
     }
@@ -132,11 +131,7 @@ function useSfx(enabled: boolean) {
   function beep(freq: number, ms: number, volume = 0.05, type: OscillatorType = "sine") {
     if (!enabled) return;
     const ctx = getCtx();
-
-    // Ensure resumed after first gesture
-    if (ctx.state === "suspended") {
-      void ctx.resume();
-    }
+    if (ctx.state === "suspended") void ctx.resume();
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -144,7 +139,6 @@ function useSfx(enabled: boolean) {
     osc.type = type;
     osc.frequency.value = freq;
 
-    // Gentle envelope to avoid clicks
     const now = ctx.currentTime;
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(volume, now + 0.01);
@@ -157,7 +151,6 @@ function useSfx(enabled: boolean) {
     osc.stop(now + ms / 1000);
   }
 
-  // Small “motifs”
   const sfx = {
     yes: () => beep(660, 90, 0.05, "triangle"),
     no: () => beep(220, 140, 0.06, "sawtooth"),
@@ -206,7 +199,7 @@ export default function Page() {
   const [qaLog, setQaLog] = useState<QAItem[]>([]);
   const [revealedLetters, setRevealedLetters] = useState<Set<string>>(new Set());
   const [wrongLetters, setWrongLetters] = useState<Set<string>>(new Set());
-  const [message, setMessage] = useState<string>(""); // can be empty; UI still shows box
+  const [message, setMessage] = useState<string>("");
 
   // Inputs
   const [questionText, setQuestionText] = useState("");
@@ -274,7 +267,6 @@ export default function Page() {
       return;
     }
 
-    // fresh state
     setStrikes(0);
     setQuestionsAsked(0);
     setQaLog([]);
@@ -404,7 +396,6 @@ export default function Page() {
   return (
     <main className="min-h-screen bg-[#0C2340] text-white">
       <div className="mx-auto max-w-5xl px-4 py-8">
-        {/* Big centered header */}
         <header className="mb-6 text-center">
           <h1 className="text-5xl font-extrabold tracking-tight text-[#E87722]">Hang 10</h1>
           <p className="mt-2 text-lg text-white/85">
@@ -428,11 +419,22 @@ export default function Page() {
           </div>
         </header>
 
-        {/* Feedback area ALWAYS present so the page never resizes */}
-        <div className="mb-6 rounded-3xl border border-white/25 bg-[#E87722]/20 px-6 py-5 text-lg font-semibold text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)] min-h-[88px] flex items-center">
+        {/* Feedback area ALWAYS present */}
+        <div className="mb-4 rounded-3xl border border-white/25 bg-[#E87722]/20 px-6 py-5 text-lg font-semibold text-white shadow-[0_0_0_1px_rgba(255,255,255,0.08)] min-h-[88px] flex items-center">
           <span className={message ? "" : "text-white/70"}>
             {message || "Make a guess or ask a question to get feedback here."}
           </span>
+        </div>
+
+        {/* Strikes box (same vibe/size as feedback), Xs red */}
+        <div className="mb-6 rounded-3xl border border-white/25 bg-white/5 px-6 py-5 min-h-[88px] flex flex-col justify-center shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
+          <div className="text-sm uppercase tracking-wider text-white/70">Strikes</div>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <span className="font-mono text-2xl text-red-400">{strikeMarks(strikes) || "—"}</span>
+            <span className="text-white/75">
+              ({strikes}/{settings.maxStrikes}) • {strikesLeft} left
+            </span>
+          </div>
         </div>
 
         {phase === "home" && (
@@ -575,13 +577,6 @@ export default function Page() {
             {/* Left */}
             <div className="rounded-3xl border border-white/15 bg-white/5 p-6 lg:col-span-2">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-base text-white/95">
-                  <span className="font-bold text-white">Strikes:</span>{" "}
-                  <span className="font-mono text-lg">{strikeMarks(strikes) || "—"}</span>{" "}
-                  <span className="ml-2 text-white/70">
-                    ({strikes}/{settings.maxStrikes}) • {strikesLeft} left
-                  </span>
-                </div>
                 <div className="text-base text-white/95">
                   <span className="font-bold text-white">Questions:</span> {questionsAsked} / {settings.maxQuestions}{" "}
                   <span className="ml-2 text-white/70">({questionsLeft} left)</span>
@@ -770,7 +765,7 @@ export default function Page() {
               )}
               <div className="mt-3 text-base text-white/85">
                 <span className="text-white/70">Strikes:</span>{" "}
-                <span className="font-mono">{strikeMarks(strikes) || "—"}</span>{" "}
+                <span className="font-mono text-red-400">{strikeMarks(strikes) || "—"}</span>{" "}
                 <span className="text-white/70">({strikes}/{settings.maxStrikes})</span>
               </div>
             </div>
