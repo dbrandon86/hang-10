@@ -5,17 +5,14 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 type Phase = "home" | "setup" | "play" | "end";
 type YesNo = "YES" | "NO";
 
-type QAItem = {
-  q: string;
-  a: YesNo;
-};
+type QAItem = { q: string; a: YesNo };
 
 type Settings = {
-  maxStrikes: number; // default 10
-  maxQuestions: number; // default 10
-  wrongLetterStrike: number; // default 1
-  wrongFullGuessStrike: number; // default 1
-  hintCostCategory: number; // default 3
+  maxStrikes: number;
+  maxQuestions: number;
+  wrongLetterStrike: number;
+  wrongFullGuessStrike: number;
+  hintCostCategory: number;
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -47,23 +44,21 @@ function allRevealed(norm: string, revealed: Set<string>) {
   return true;
 }
 
-// ✅ Needed for Settings controls (prevents Vercel build failure)
 function clampInt(n: number, min: number, max: number) {
   if (Number.isNaN(n)) return min;
   return Math.max(min, Math.min(max, n));
 }
 
-// Xs only (no dots)
 function strikeMarks(strikes: number) {
   return "X".repeat(Math.max(0, strikes)).split("").join(" ");
 }
 
 /**
  * Answer display:
- * - Less space between letters (tight)
- * - More space between words (bigger gap)
- * - Auburn orange for BOTH underscores + revealed letters
- * - Not bold
+ * - less space between letters
+ * - more space between words
+ * - Auburn orange for underscores + revealed letters
+ * - not bold
  */
 function AnswerDisplay({
   normalized,
@@ -78,7 +73,6 @@ function AnswerDisplay({
     const ch = normalized[i];
 
     if (ch === " ") {
-      // bigger word gap
       items.push(<span key={`w-${i}`} className="inline-block w-10" />);
       continue;
     }
@@ -88,7 +82,7 @@ function AnswerDisplay({
       items.push(
         <span
           key={`l-${i}`}
-          className="inline-flex w-8 sm:w-10 items-center justify-center font-mono text-4xl sm:text-5xl font-normal tracking-tight text-[#E87722] mx-1"
+          className="inline-flex w-8 sm:w-10 items-center justify-center font-mono text-4xl sm:text-6xl font-normal tracking-tight text-[#E87722] mx-1"
           aria-label={shown === "_" ? "blank" : shown}
         >
           {shown}
@@ -97,11 +91,10 @@ function AnswerDisplay({
       continue;
     }
 
-    // punctuation visible, neutral color
     items.push(
       <span
         key={`p-${i}`}
-        className="font-mono text-4xl sm:text-5xl font-normal tracking-tight text-white/90 mx-1"
+        className="font-mono text-4xl sm:text-6xl font-normal tracking-tight text-white/90 mx-1"
       >
         {ch}
       </span>
@@ -112,8 +105,7 @@ function AnswerDisplay({
 }
 
 /**
- * Simple sound effects (no files needed) via Web Audio API.
- * Mobile requires a user gesture once; we resume context on-demand.
+ * Sound effects with Web Audio API (no files).
  */
 function useSfx(enabled: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
@@ -180,18 +172,18 @@ function useSfx(enabled: boolean) {
 export default function Page() {
   const [phase, setPhase] = useState<Phase>("home");
 
-  // setup
+  // Setup
   const [secretAnswer, setSecretAnswer] = useState("");
   const [category, setCategory] = useState("");
 
-  // settings
+  // Settings
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
 
-  // sound
+  // Sound
   const [soundsOn, setSoundsOn] = useState(true);
   const sfx = useSfx(soundsOn);
 
-  // game state
+  // Game state
   const [strikes, setStrikes] = useState(0);
   const [questionsAsked, setQuestionsAsked] = useState(0);
   const [qaLog, setQaLog] = useState<QAItem[]>([]);
@@ -199,15 +191,15 @@ export default function Page() {
   const [wrongLetters, setWrongLetters] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<string>("");
 
-  // inputs
+  // Inputs
   const [questionText, setQuestionText] = useState("");
   const [letterGuess, setLetterGuess] = useState("");
   const [fullGuess, setFullGuess] = useState("");
 
-  // host-only view
+  // Host-only
   const [showAnswerToHost, setShowAnswerToHost] = useState(false);
 
-  // enter-to-submit focus refs
+  // Refs for Enter-to-submit focus
   const letterInputRef = useRef<HTMLInputElement | null>(null);
   const fullInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -220,15 +212,13 @@ export default function Page() {
     return allRevealed(normalized, revealedLetters);
   }, [phase, normalized, revealedLetters]);
 
-  const hasLost = useMemo(() => phase === "play" && strikes >= settings.maxStrikes, [
-    phase,
-    strikes,
-    settings.maxStrikes,
-  ]);
+  const hasLost = useMemo(
+    () => phase === "play" && strikes >= settings.maxStrikes,
+    [phase, strikes, settings.maxStrikes]
+  );
 
   useEffect(() => {
     if (phase !== "play") return;
-
     if (hasWon) {
       setPhase("end");
       setMessage("You solved it!");
@@ -429,18 +419,18 @@ export default function Page() {
           </div>
         </header>
 
-        {/* Feedback box ALWAYS present (prevents resizing) */}
-        <div className="mb-4 rounded-3xl border border-white/25 bg-[#E87722]/20 px-6 py-5 min-h-[88px] flex items-center text-lg font-semibold shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
+        {/* Feedback (smaller) */}
+        <div className="mb-4 rounded-3xl border border-white/20 bg-[#E87722]/15 px-5 py-4 min-h-[64px] flex items-center text-base font-semibold shadow-[0_0_0_1px_rgba(255,255,255,0.06)]">
           <span className={message ? "" : "text-white/70"}>
             {message || "Make a move to see feedback here."}
           </span>
         </div>
 
-        {/* Strikes box below feedback */}
-        <div className="mb-6 rounded-3xl border border-white/25 bg-white/5 px-6 py-5 min-h-[88px] flex flex-col justify-center shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
+        {/* Strikes (stand out more) */}
+        <div className="mb-6 rounded-3xl border border-[#E87722]/35 bg-black/30 px-6 py-5 min-h-[88px] flex flex-col justify-center shadow-[0_0_0_1px_rgba(232,119,34,0.22),0_12px_30px_rgba(0,0,0,0.35)]">
           <div className="text-sm uppercase tracking-wider text-white/70">Strikes</div>
           <div className="mt-2 flex flex-wrap items-center gap-3">
-            <span className="font-mono text-2xl text-red-400">{strikeMarks(strikes) || "—"}</span>
+            <span className="font-mono text-3xl text-red-400">{strikeMarks(strikes) || "—"}</span>
             <span className="text-white/75">
               ({strikes}/{settings.maxStrikes}) • {strikesLeft} left
             </span>
@@ -485,7 +475,9 @@ export default function Page() {
                 <LabeledNumber
                   label="Wrong letter strike"
                   value={settings.wrongLetterStrike}
-                  onChange={(v) => setSettings((s) => ({ ...s, wrongLetterStrike: clampInt(v, 0, 5) }))}
+                  onChange={(v) =>
+                    setSettings((s) => ({ ...s, wrongLetterStrike: clampInt(v, 0, 5) }))
+                  }
                 />
                 <LabeledNumber
                   label="Wrong full guess strikes"
@@ -497,12 +489,16 @@ export default function Page() {
                 <LabeledNumber
                   label="Max strikes"
                   value={settings.maxStrikes}
-                  onChange={(v) => setSettings((s) => ({ ...s, maxStrikes: clampInt(v, 1, 20) }))}
+                  onChange={(v) =>
+                    setSettings((s) => ({ ...s, maxStrikes: clampInt(v, 1, 20) }))
+                  }
                 />
                 <LabeledNumber
                   label="Max questions"
                   value={settings.maxQuestions}
-                  onChange={(v) => setSettings((s) => ({ ...s, maxQuestions: clampInt(v, 0, 20) }))}
+                  onChange={(v) =>
+                    setSettings((s) => ({ ...s, maxQuestions: clampInt(v, 0, 20) }))
+                  }
                 />
                 <LabeledNumber
                   label="Hint cost: category"
@@ -578,20 +574,21 @@ export default function Page() {
 
         {phase === "play" && (
           <>
-            {/* FULL-WIDTH ANSWER AREA */}
-            <section className="mb-6 rounded-3xl border border-white/15 bg-black/20 p-6">
+            {/* Answer (bigger) */}
+            <section className="mb-6 rounded-3xl border border-white/15 bg-black/25 p-8 min-h-[190px] flex flex-col justify-center">
               <div className="text-xs uppercase tracking-wider text-white/70 text-center">Answer</div>
-              <AnswerDisplay normalized={normalized} revealed={revealedLetters} />
-              <div className="mt-4 text-base text-white/75 text-center">
+              <div className="mt-3">
+                <AnswerDisplay normalized={normalized} revealed={revealedLetters} />
+              </div>
+              <div className="mt-5 text-base text-white/75 text-center">
                 Letters revealed:{" "}
                 <span className="text-white font-semibold">{revealedLetters.size}</span> /{" "}
                 <span className="text-white font-semibold">{uniqueLetters.size}</span>
               </div>
             </section>
 
-            {/* Everything below aligned in a grid (hint + log moved DOWN here) */}
+            {/* Grid: actions + hint + log aligned */}
             <section className="grid gap-6 md:grid-cols-2">
-              {/* Ask */}
               <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
                 <h3 className="text-lg font-bold">Ask a yes/no question</h3>
                 <p className="mt-1 text-sm text-white/85">
@@ -626,7 +623,6 @@ export default function Page() {
                 </div>
               </div>
 
-              {/* Guess letter (enter submits) */}
               <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
                 <h3 className="text-lg font-bold">Guess a letter</h3>
                 <p className="mt-1 text-sm text-white/85">
@@ -657,7 +653,6 @@ export default function Page() {
                 </div>
               </div>
 
-              {/* Guess full answer (enter submits) */}
               <div className="rounded-3xl border border-white/15 bg-white/5 p-5 md:col-span-2">
                 <h3 className="text-lg font-bold">Guess the full answer</h3>
                 <p className="mt-1 text-sm text-white/85">
@@ -683,7 +678,6 @@ export default function Page() {
                 </form>
               </div>
 
-              {/* Hint moved DOWN, aligned */}
               <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
                 <h3 className="text-lg font-bold">Hint (costs strikes)</h3>
                 <button
@@ -695,7 +689,6 @@ export default function Page() {
                 </button>
               </div>
 
-              {/* Log moved DOWN, aligned */}
               <div className="rounded-3xl border border-white/15 bg-white/5 p-5">
                 <h3 className="text-lg font-bold">Question log</h3>
                 <div className="mt-3 max-h-[320px] overflow-auto rounded-2xl border border-white/15 bg-black/20">
