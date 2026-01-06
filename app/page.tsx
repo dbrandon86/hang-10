@@ -45,40 +45,47 @@ function strikeMarks(strikes: number) {
   return "X".repeat(Math.max(0, strikes)).split("").join(" ");
 }
 
-function AnswerDisplay({ normalized, revealed }: { normalized: string; revealed: Set<string> }) {
-  const items: React.ReactNode[] = [];
-  for (let i = 0; i < normalized.length; i++) {
-    const ch = normalized[i];
+function AnswerDisplay({
+  normalized,
+  revealed,
+}: {
+  normalized: string;
+  revealed: Set<string>;
+}) {
+  const words = normalized.split(" ");
 
-    if (ch === " ") {
-      items.push(<span key={`w-${i}`} className="inline-block w-10" />);
-      continue;
-    }
-    if (isLetter(ch)) {
-      const shown = revealed.has(ch) ? ch : "_";
-      items.push(
-        <span
-          key={`l-${i}`}
-          className="inline-flex w-8 sm:w-10 items-center justify-center font-mono text-4xl sm:text-6xl font-normal tracking-tight text-[#E87722] mx-1"
-          aria-label={shown === "_" ? "blank" : shown}
-        >
-          {shown}
-        </span>
-      );
-      continue;
-    }
+  return (
+    <div className="flex flex-wrap justify-center gap-x-8 gap-y-4">
+      {words.map((word, wi) => (
+        <div key={wi} className="flex">
+          {word.split("").map((ch, li) => {
+            if (!isLetter(ch)) {
+              return (
+                <span
+                  key={li}
+                  className="mx-1 font-mono text-4xl sm:text-6xl text-white/90"
+                >
+                  {ch}
+                </span>
+              );
+            }
 
-    items.push(
-      <span
-        key={`p-${i}`}
-        className="font-mono text-4xl sm:text-6xl font-normal tracking-tight text-white/90 mx-1"
-      >
-        {ch}
-      </span>
-    );
-  }
-  return <div className="flex flex-wrap justify-center items-center">{items}</div>;
+            const shown = revealed.has(ch) ? ch : "_";
+            return (
+              <span
+                key={li}
+                className="mx-1 w-8 sm:w-10 text-center font-mono text-4xl sm:text-6xl font-normal tracking-tight text-[#E87722]"
+              >
+                {shown}
+              </span>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
 }
+
 
 function useSfx(enabled: boolean) {
   const ctxRef = useRef<AudioContext | null>(null);
